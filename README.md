@@ -106,3 +106,6 @@ The `archive/` folder contains original research scripts and Jupyter notebooks t
 ---
 
 **Developed for Advanced Quantum Simulations.**
+
+**Principal Author:** Sabin Thapa ([sthapa3@kent.edu](mailto:sthapa3@kent.edu))  
+**Research Area:** Quantum Simulation for Lattice Field Theory.
