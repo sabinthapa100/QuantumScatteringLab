@@ -6,40 +6,31 @@ from fastapi.middleware.cors import CORSMiddleware
 import quimb.tensor as qtn
 
 # Import core QSL modules
-from src.models.ising_1d import IsingModel1D
-from src.models.su2 import SU2GaugeModel
-from src.backends.quimb_mps_backend import QuimbMPSBackend
-from src.simulation.initialization import prepare_two_wavepacket_state
+from src.models.ising_2d import IsingModel2D
 
-app = FastAPI()
-
-# Enable CORS for frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class WavepacketParams(BaseModel):
-    x0: float
-    k0: float
-    sigma: float
-
-class SimulationParams(BaseModel):
-    model_type: str  # "ising_1d" or "su2_gauge"
-    num_sites: int = 20
-    g_x: float = 1.0  # Transverse field / Coupling g
-    g_z: float = 0.0  # Longitudinal field / unused
-    dt: float = 0.1
-    steps: int = 50
-    wp1: WavepacketParams
-    wp2: WavepacketParams
-
-@app.get("/")
-def read_root():
-    return {"status": "Quantum Scattering Lab API is running"}
+@app.get("/model-info")
+def get_model_info(model_type: str):
+    """Return LaTeX string for the Hamiltonian."""
+    if model_type == "ising_1d":
+        return {
+            "name": "1D Transverse Field Ising Model",
+            "latex": r"H = -J \sum_{i} Z_i Z_{i+1} - g_x \sum_{i} X_i - g_z \sum_{i} Z_i",
+            "description": "Standard 1D spin chain with nearest-neighbor interactions."
+        }
+    elif model_type == "ising_2d":
+        return {
+            "name": "2D Transverse Field Ising Model",
+            "latex": r"H = -J \sum_{\langle i,j \rangle} Z_i Z_j - g_x \sum_{i} X_i - g_z \sum_{i} Z_i",
+            "description": "Square lattice model mapped to 1D via snake-path ordering."
+        }
+    elif model_type == "su2_gauge":
+        return {
+            "name": "SU(2) Lattice Gauge Theory",
+            "latex": r"H = \frac{g^2}{2} \sum_{l} E_l^2 - \frac{1}{2g^2} \sum_{p} (\text{Tr } U_p + h.c.)",
+            "description": "Kogut-Susskind Hamiltonian on a 1D plaquette chain (dual formulation)."
+        }
+    else:
+        return {"latex": "H = ?", "name": "Unknown"}
 
 @app.post("/simulate")
 def simulate_scattering(params: SimulationParams):
@@ -47,42 +38,34 @@ def simulate_scattering(params: SimulationParams):
         print(f"Starting simulation: {params.model_type}, L={params.num_sites}")
         
         # 1. Initialize Backend
-        # Use MPS for scalability
-        backend = QuimbMPSBackend(max_bond_dim=32)
+        backend = QuimbMPSBackend(max_bond_dim=48)
         
         # 2. Initialize Model & Vacuum
         vac_e = np.zeros(params.num_sites)
+        model = None
         
         if params.model_type == "ising_1d":
             model = IsingModel1D(num_sites=params.num_sites, g_x=params.g_x, g_z=params.g_z, pbc=True)
-            
-            # Approximate vacuum |0...0> (Good for strong field)
-            # For more accuracy, we could run imaginary time evolution here, 
-            # but for GUI responsiveness, reference state is often acceptable or pre-calculated.
             psi_vac = backend.get_reference_state(params.num_sites)
             
-            # If g_z is small/zero, |0> is not eigenstate of X term.
-            # Let's do a quick imaginary time evolution if system is small?
-            # Or just subtract expectation of reference.
+        elif params.model_type == "ising_2d":
+            # Map Lx * Ly = num_sites. Try to find square-ish factors
+            import math
+            L = params.num_sites
+            Lx = int(math.sqrt(L))
+            Ly = L // Lx
+            # Adjust L to match rectangle
+            real_L = Lx * Ly
+            if real_L != L:
+                print(f"Adjusting 2D Lattice to {Lx}x{Ly} = {real_L}")
             
-            # Better: Calculate "Vacuum" energy density on the fly for subtraction
-            # For Ising at g=1, vacuum is complex. 
-            # Let's use the reference state expectation for now to keep it fast.
-            # Or better: don't subtract if unsafe. 
-            # Let's try to get a better vacuum if L is small.
-            if params.num_sites <= 12:
-                # Use dense exact diag for better vacuum
-                from src.backends.quimb_backend import QuimbBackend
-                dense_backend = QuimbBackend()
-                H_dense = dense_backend._pauli_to_matrix(model.build_hamiltonian())
-                from scipy.sparse.linalg import eigsh
-                evals, evecs = eigsh(H_dense, k=1, which='SA')
-                # But we need MPS state.
-                # Skip perfect vacuum for speed in GUI demo.
-                pass
+            model = IsingModel2D(Lx=Lx, Ly=Ly, g_x=params.g_x, g_z=params.g_z, pbc=False)
+            psi_vac = backend.get_reference_state(real_L)
+            
+            # Update params sites for return
+            params.num_sites = real_L
 
         elif params.model_type == "su2_gauge":
-            # Map parameters: g -> g_x
             model = SU2GaugeModel(num_sites=params.num_sites, g=params.g_x, a=1.0, pbc=True)
             psi_vac = backend.get_reference_state(params.num_sites)
             
@@ -90,30 +73,28 @@ def simulate_scattering(params: SimulationParams):
             raise HTTPException(status_code=400, detail=f"Unknown model: {params.model_type}")
 
         # Compute vacuum energy profile for subtraction
-        # (MPS computation)
         vac_e = []
-        for n in range(params.num_sites):
+        # Note: calling get_local_hamiltonian for 2D might be slow if loop is large
+        # But for L=20 it's fast.
+        for n in range(model.num_sites):
              op = model.get_local_hamiltonian(n)
              vac_e.append(backend.compute_expectation_value(psi_vac, op))
 
         # 3. Prepare Initial State (Two Wavepackets)
-        # Using the helper from src
-        # Note: helper returns dense vector usually, need to convert to MPS
         psi_dense = prepare_two_wavepacket_state(
-            params.num_sites,
+            model.num_sites,
             x1=params.wp1.x0, k1=params.wp1.k0 * np.pi, sigma1=params.wp1.sigma,
             x2=params.wp2.x0, k2=params.wp2.k0 * np.pi, sigma2=params.wp2.sigma,
             backend_type="numpy"
         )
         
         # Convert dense to MPS
-        current_psi = qtn.MatrixProductState.from_dense(psi_dense, [2] * params.num_sites)
-        current_psi.compress(max_bond=32)
+        current_psi = qtn.MatrixProductState.from_dense(psi_dense, [2] * model.num_sites)
+        current_psi.compress(max_bond=48)
 
         # 4. Use Modular Simulation Engine
         from src.simulation.scattering import ScatteringSimulator
         simulator = ScatteringSimulator(model, backend)
-        # Set vacuum for subtraction manually or let it compute
         simulator.vac_energy_profile = vac_e 
         
         simulation_result = simulator.run(
@@ -126,12 +107,14 @@ def simulate_scattering(params: SimulationParams):
         return {
             "heatmap": simulation_result["energy_density"],
             "t_max": params.steps * params.dt,
-            "sites": list(range(params.num_sites))
+            "sites": list(range(model.num_sites)),
+            "real_shape": f"{Lx}x{Ly}" if params.model_type == "ising_2d" else f"{model.num_sites}x1"
         }
 
     except Exception as e:
         import traceback
         traceback.print_exc()
+        # Return simple string error to frontend to avoid [object Object] confusion
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
