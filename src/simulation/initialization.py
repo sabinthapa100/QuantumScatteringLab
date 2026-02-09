@@ -177,7 +177,8 @@ def prepare_two_wavepacket_mps(
             if res is None:
                 res = term
             else:
-                res = res.add(term, max_bond=32)
+                res = res.add(term)  # quimb add() doesn't take max_bond
+                res.compress(max_bond=32)  # Compress after adding
             
             count += 1
             if count % 20 == 0:
@@ -239,8 +240,8 @@ def prepare_three_wavepacket_mps(
                 if res is None:
                     res = term
                 else:
-                    # Use a slightly larger bond dimension for 3 particles
-                    res = res.add(term, max_bond=48)
+                    res = res.add(term)  # quimb add() doesn't take max_bond
+                    res.compress(max_bond=48)  # Compress after adding
                 
                 count += 1
                 if count % 20 == 0:
