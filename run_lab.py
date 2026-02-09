@@ -8,19 +8,32 @@ import threading
 import webbrowser
 
 def stream_process(process, prefix):
+    # Stream both stdout and stderr
     for line in iter(process.stdout.readline, b''):
         print(f"[{prefix}] {line.decode().strip()}")
+    for line in iter(process.stderr.readline, b''):
+        print(f"[{prefix} ERROR] {line.decode().strip()}")
 
 def main():
     print("\n⚛️  QUANTUM SCATTERING LAB: LAUNCHER\n(Easier, Better, Faster)\n")
     
+    # Ensure we are in the project root
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    
     # 1. Start Backend
     print("Starting Physics Engine (FastAPI)...")
+    # Explicitly use the venv uvicorn if possible, or module
+    cmd = [sys.executable, "-m", "uvicorn", "server:app", "--port", "8000", "--host", "0.0.0.0"]
+    
+    env = os.environ.copy()
+    env["PYTHONPATH"] = project_root # Ensure root is in PYTHONPATH
+    
     backend = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "server:app", "--port", "8000"],
-        cwd="dashboard",
+        cmd,
+        cwd=os.path.join(project_root, "dashboard"),
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
+        env=env
     )
     
     # Non-blocking stream
@@ -28,10 +41,9 @@ def main():
     
     # 2. Start Frontend
     print("Starting Visualization (Vite)...")
-    # Use npm run dev
     frontend = subprocess.Popen(
         ["npm", "run", "dev"],
-        cwd="dashboard",
+        cwd=os.path.join(project_root, "dashboard"),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
@@ -49,6 +61,11 @@ def main():
             time.sleep(1)
             if backend.poll() is not None:
                 print("Backend crashed!")
+                print(f"Backend return code: {backend.returncode}")
+                # Use communicate to get any remaining error output
+                out, err = backend.communicate()
+                if out: print(f"Backend STDOUT: {out.decode()}")
+                if err: print(f"Backend STDERR: {err.decode()}")
                 break
             if frontend.poll() is not None:
                 print("Frontend crashed!")

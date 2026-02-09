@@ -1,46 +1,24 @@
-# Quantum Scattering Lab (QSL)
+# ⚛️ Quantum Scattering Lab (QSL)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
-[![Framework: Quimb](https://img.shields.io/badge/Engine-Quimb-green.svg)](https://quimb.readthedocs.io/)
+A professional research-grade simulation framework for exploring **Inelastic Scattering** and **Particle Production** in Quantum Field Theories ($1+1D$ Ising and $SU(2)$ LGT) using Matrix Product States (MPS).
 
-A production-grade quantum simulation framework designed to explore high-energy physics phenomena using quantum information theoretic tools. This repository focuses on simulating **scattering dynamics in 1D/2D Ising Models** and **SU(2) Lattice Gauge Theories**, implementing rigorous **Matrix Product State (MPS)** methods and **ADAPT-VQE** state preparation algorithms.
+## 📖 Quick Links
+- **[Getting Started (Installation & Usage)](docs/GETTING_STARTED.md)** – Run your first simulation in 5 minutes.
+- **[Testing Guide](docs/TEST_GUIDE.md)** – Ensure everything is calibrated correctly.
+- **[Physics Architecture](docs/RESEARCH_GUIDE.md)** – Detailed derivations of Hamiltonians and backends.
 
-## 🔬 Scientific Objectives
-
-My work in this repository targets three core research areas inspired by *Farrell et al. (2025)*:
-
-1.  **Vacuum & State Preparation**:
-    - Utilizing **ADAPT-VQE** to construct accurate ground states and single-particle excitations (magnons/mesons) on quantum hardware.
-    - Benchmarking ansatz depth connectivity against exact diagonalization.
-
-2.  **Real-Time Scattering Dynamics**:
-    - Simulating wavepacket collisions to observe **elastic vs. inelastic scattering** regimes.
-    - Quantifying particle production and entanglement entropy growth during high-energy collision events.
-    - **Models**:
-        - **1D Ising**: Transverse ($g_x$) and Longitudinal ($g_z$) fields.
-        - **SU(2) Gauge Theory**: Plaquette chain mapping for "glueball" dynamics.
-
-3.  **Interactive Visualization**:
-    - A custom-built **React + FastAPI** dashboard to visualize energy density evolution in real-time, allowing for rapid parameter tuning and intuition building.
-
-## 🏗️ Architecture
-
+## 🏗️ Project Architecture
 The codebase is structured for scalability and reproducibility:
 
 - **`src/`**: The Core Engine.
-    - **`models/`**: rigorous Hamiltonian definitions (`IsingModel1D`, `SU2GaugeModel`) with explicit symmetry sectors.
+    - **`models/`**: Rigorous Hamiltonian definitions (`IsingModel1D`, `IsingModel2D`, `SU2GaugeModel`) with explicit symmetry sectors.
     - **`backends/`**: 
         - `QuimbMPSBackend`: Optimized Tensor Network backend for $L > 20$ sites.
-        - `QiskitBackend`: Exact statevector simulation for validation.
+        - `QiskitBackend`: Exact statevector validation.
     - **`simulation/`**: Trotterized time-evolution and ADAPT-VQE solvers.
     
-- **`examples/`**: Research scripts.
-    - `scattering/`: Production scripts for generating scattering heatmaps.
-    - `ground_state/`: Converging vacuum states using variational methods.
-    
-- **`dashboard/`**: Interactive GUI.
-    - Full-stack visualization tool for presenting results dynamically.
+- **`examples/`**: Research scripts for scattering and ground state preparation.
+- **`dashboard/`**: Custom-built **React + FastAPI** dashboard to visualize energy density evolution in real-time.
 
 ## 🚀 Quick Start
 

@@ -58,8 +58,9 @@ setup(
         "all": [
             "quimb>=1.7.0",
             "pytest>=7.4.0",
-            "streamlit>=1.28.0",
-            "sphinx>=7.0.0",
+            "fastapi",
+            "uvicorn",
+            "pydantic"
         ],
     },
 )

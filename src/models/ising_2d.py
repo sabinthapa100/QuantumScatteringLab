@@ -193,6 +193,39 @@ class IsingModel2D(PhysicsModel):
         
         return layers
 
+    def build_operator_pool(self) -> List[SparsePauliOp]:
+        """
+        Operator pool for 2D Ising ADAPT-VQE.
+        Standard pool: Single-site X and Nearest-neighbor ZZ.
+        """
+        pool = []
+        
+        # 1. Single-site X operators
+        for i in range(self.num_sites):
+            p = ["I"] * self.num_sites
+            p[i] = "X"
+            pool.append(SparsePauliOp("".join(reversed(p))))
+            
+        # 2. Horizontal ZZ bonds
+        for y in range(self.Ly):
+            for x in range(self.Lx - 1):
+                i = self._coord_to_index(x, y)
+                j = self._coord_to_index(x+1, y)
+                p = ["I"] * self.num_sites
+                p[i] = "Z"; p[j] = "Z"
+                pool.append(SparsePauliOp("".join(reversed(p))))
+                
+        # 3. Vertical ZZ bonds
+        for x in range(self.Lx):
+            for y in range(self.Ly - 1):
+                i = self._coord_to_index(x, y)
+                j = self._coord_to_index(x, y+1)
+                p = ["I"] * self.num_sites
+                p[i] = "Z"; p[j] = "Z"
+                pool.append(SparsePauliOp("".join(reversed(p))))
+                
+        return pool
+
     def get_metadata(self) -> ModelMetadata:
         return ModelMetadata(
             name="2D Ising Model",

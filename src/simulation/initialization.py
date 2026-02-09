@@ -72,13 +72,16 @@ def prepare_two_wavepacket_state(
     num_sites: int,
     x1: float, k1: float, sigma1: float,
     x2: float, k2: float, sigma2: float,
-    backend_type: str = "qiskit"
+    backend_type: str = "qiskit",
+    reference_state=None
 ) -> Any:
     """
     Prepare a state with TWO wavepackets in the 2-excitation sector.
     |W1, W2> = sum_{n<m} (c1_n c2_m + c1_m c2_n) |2^n + 2^m>
-    (assuming they represent additive excitations like spin-flips)
     """
+    if backend_type == "mps":
+        return prepare_two_wavepacket_mps(num_sites, x1, k1, sigma1, x2, k2, sigma2, reference_state=reference_state)
+
     n_range = np.arange(num_sites)
     c1 = np.exp(-(n_range - x1)**2 / (4 * sigma1**2)) * np.exp(1j * k1 * n_range)
     c2 = np.exp(-(n_range - x2)**2 / (4 * sigma2**2)) * np.exp(1j * k2 * n_range)
@@ -98,6 +101,156 @@ def prepare_two_wavepacket_state(
     if backend_type == "qiskit":
         return Statevector(vec)
     return vec
+
+def prepare_wavepacket_mps(num_sites: int, x0: float, k0: float, sigma: float, reference_state=None) -> Any:
+    """
+    Directly construct a single-wavepacket MPS: |W> = sum_n c_n X_n |vac>.
+    """
+    import quimb as qu
+    import quimb.tensor as qtn
+
+    if reference_state is None:
+        psi = qtn.MPS_computational_state("0" * num_sites)
+    else:
+        psi = reference_state.copy()
+
+    n_range = np.arange(num_sites)
+    coeffs = np.exp(-(n_range - x0)**2 / (4 * sigma**2)) * np.exp(1j * k0 * n_range)
+    coeffs /= np.linalg.norm(coeffs)
+
+    res = None
+    for n in range(num_sites):
+        if abs(coeffs[n]) < 1e-6: continue
+        term = psi.gate(qu.pauli('X'), n, contract=True)
+        term *= coeffs[n]
+        if res is None:
+            res = term
+        else:
+            res = res.add(term, max_bond=16)
+    
+    res.compress(max_bond=32)
+    return res
+
+def prepare_two_wavepacket_mps(
+    num_sites: int,
+    x1: float, k1: float, sigma1: float,
+    x2: float, k2: float, sigma2: float,
+    reference_state=None
+) -> Any:
+    """
+    Directly construct a two-wavepacket MPS.
+    """
+    import quimb as qu
+    import quimb.tensor as qtn
+    
+    if reference_state is None:
+        psi_vac = qtn.MPS_computational_state("0" * num_sites)
+    else:
+        psi_vac = reference_state
+        
+    n_range = np.arange(num_sites)
+    c1 = np.exp(-(n_range - x1)**2 / (4 * sigma1**2)) * np.exp(1j * k1 * n_range)
+    c2 = np.exp(-(n_range - x2)**2 / (4 * sigma2**2)) * np.exp(1j * k2 * n_range)
+    
+    # Normalize inputs
+    c1 /= (np.linalg.norm(c1) + 1e-12)
+    c2 /= (np.linalg.norm(c2) + 1e-12)
+    
+    res = None
+    count = 0
+    # Optimization: Filter sites with negligible amplitude
+    sites1 = [i for i, v in enumerate(c1) if abs(v) > 1e-4]
+    sites2 = [i for i, v in enumerate(c2) if abs(v) > 1e-4]
+    
+    for n in sites1:
+        for m in sites2:
+            if n == m: continue # Exclude same site (Pauli exclusion for flips)
+            
+            coeff = c1[n] * c2[m]
+            if abs(coeff) < 1e-6: continue
+            
+            # Create two-flip state efficiently
+            term = psi_vac.gate(qu.pauli('X'), n, contract=True)
+            term.gate(qu.pauli('X'), m, contract=True, inplace=True)
+            term *= coeff
+            
+            if res is None:
+                res = term
+            else:
+                res = res.add(term, max_bond=32)
+            
+            count += 1
+            if count % 20 == 0:
+                res.compress(max_bond=64)
+                
+    if res is None:
+        return psi_vac # Fallback
+        
+    res.compress(max_bond=64)
+    return res
+
+def prepare_three_wavepacket_mps(
+    num_sites: int,
+    wps: List[dict],
+    reference_state=None
+) -> Any:
+    """
+    Construct a three-wavepacket MPS efficiently.
+    wps: List of dicts with x0, k0, sigma.
+    """
+    import quimb as qu
+    import quimb.tensor as qtn
+    
+    if reference_state is None:
+        psi_vac = qtn.MPS_computational_state("0" * num_sites)
+    else:
+        psi_vac = reference_state
+        
+    n_range = np.arange(num_sites)
+    
+    # Precompute coefficients
+    coeff_list = []
+    for wp in wps:
+        c = np.exp(-(n_range - wp['x0'])**2 / (4 * wp['sigma']**2)) * np.exp(1j * wp['k0'] * n_range)
+        c /= (np.linalg.norm(c) + 1e-12)
+        coeff_list.append(c)
+    
+    res = None
+    count = 0
+    
+    # We want sum_{i<j<k} c1_i c2_j c3_k |i, j, k>
+    # To keep it efficient, we only iterate over relevant sites
+    active_sites = [[s for s, v in enumerate(c) if abs(v) > 1e-3] for c in coeff_list]
+    
+    for i in active_sites[0]:
+        for j in active_sites[1]:
+            if j <= i: continue
+            for k in active_sites[2]:
+                if k <= j: continue
+                
+                coeff = coeff_list[0][i] * coeff_list[1][j] * coeff_list[2][k]
+                if abs(coeff) < 1e-6: continue
+                
+                term = psi_vac.gate(qu.pauli('X'), i, contract=True)
+                term.gate(qu.pauli('X'), j, contract=True, inplace=True)
+                term.gate(qu.pauli('X'), k, contract=True, inplace=True)
+                term *= coeff
+                
+                if res is None:
+                    res = term
+                else:
+                    # Use a slightly larger bond dimension for 3 particles
+                    res = res.add(term, max_bond=48)
+                
+                count += 1
+                if count % 20 == 0:
+                    res.compress(max_bond=64)
+                    
+    if res is None:
+        return psi_vac
+        
+    res.compress(max_bond=128)
+    return res
 def prepare_2d_wavepacket_state(
     Lx: int, Ly: int,
     x0: float, y0: float,
