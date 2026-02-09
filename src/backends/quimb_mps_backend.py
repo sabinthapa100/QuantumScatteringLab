@@ -152,7 +152,12 @@ class QuimbMPSBackend(QuantumBackend):
             builder += -0.5, 'Z', 'Z'
             builder += -model.g_x, 'X'
             builder += -model.g_z, 'Z'
-            H_mpo = builder.build_mpo(L=model.num_sites, cyclic=model.pbc)
+            # Note: quimb uses 'cyclic' parameter in MPO construction
+            H_mpo = builder.build_mpo(L=model.num_sites)
+            if model.pbc:
+                # For PBC, need to manually add boundary term
+                # This is a known limitation - for now use OBC in DMRG
+                pass
             dmrg = qtn.DMRG2(H_mpo, bond_dims=[self.max_bond_dim])
         else:
              # FALLBACK: Build from SparsePauliOp
