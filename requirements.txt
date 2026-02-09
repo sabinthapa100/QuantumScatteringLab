@@ -6,10 +6,7 @@ matplotlib>=3.7.0,<4.0.0
 # Quantum backends
 qiskit>=1.0.0,<2.0.0
 qiskit-aer>=0.13.0,<1.0.0
-
-# Optional: GPU support (uncomment if needed)
-# quimb>=1.7.0
-# cupy-cuda12x>=12.0.0
+quimb>=1.8.0
 
 # Analysis & Data
 pandas>=2.0.0,<3.0.0
@@ -18,12 +15,13 @@ pandas>=2.0.0,<3.0.0
 pytest>=7.4.0,<8.0.0
 pytest-cov>=4.1.0,<5.0.0
 pytest-benchmark>=4.0.0,<5.0.0
+ruff>=0.1.0
 
 # Code Quality
-black>=23.0.0,<24.0.0
-flake8>=6.0.0,<7.0.0
-mypy>=1.5.0,<2.0.0
-isort>=5.12.0,<6.0.0
+# Black, Flake8, and Isort are replaced by Ruff
+# black>=23.0.0,<24.0.0
+# flake8>=6.0.0,<7.0.0
+# isort>=5.12.0,<6.0.0
 
 # Visualization (optional, for UI)
 plotly>=5.17.0,<6.0.0

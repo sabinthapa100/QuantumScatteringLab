@@ -61,32 +61,103 @@ def prepare_wavepacket_state(
             vec[idx] = c
         return Statevector(vec)
     
-    elif backend_type == "quimb":
-        try:
-            import quimb.tensor as qtn
-            # Construct as sum of computational states (slow for large N but OK for initialization)
-            # Better: construct MPS directly
-            states = []
-            for n, c in enumerate(coeffs):
-                if abs(c) > 1e-10:
-                    bitstr = ['0'] * num_sites
-                    bitstr[n] = '1'
-                    state = qtn.MPS_computational_state("".join(bitstr))
-                    # Scale state
-                    for t in state.tensors:
-                        # This is a bit hacky to scale an MPS, usually we'd multiply the whole network
-                        pass
-                # A better way in Quimb to create sum of product states is more involved.
-            
-            # Simple fallback: convert from vector
-            # But that defeats the purpose of MPS for large N.
-            # Usually for scattering, N=20-30, so vector conversion is borderline.
-            pass
-            
-            # For now, return the coefficients and norm for the user to use in Quimb operations
-            return coeffs
-        except ImportError:
-            # Quimb not available, return coefficients
-            return coeffs
+    # Default to numpy array
+    vec = np.zeros(2**num_sites, dtype=complex)
+    for n, c in enumerate(coeffs):
+        idx = 1 << n
+        vec[idx] = c
+    return vec
+
+def prepare_two_wavepacket_state(
+    num_sites: int,
+    x1: float, k1: float, sigma1: float,
+    x2: float, k2: float, sigma2: float,
+    backend_type: str = "qiskit"
+) -> Any:
+    """
+    Prepare a state with TWO wavepackets in the 2-excitation sector.
+    |W1, W2> = sum_{n<m} (c1_n c2_m + c1_m c2_n) |2^n + 2^m>
+    (assuming they represent additive excitations like spin-flips)
+    """
+    n_range = np.arange(num_sites)
+    c1 = np.exp(-(n_range - x1)**2 / (4 * sigma1**2)) * np.exp(1j * k1 * n_range)
+    c2 = np.exp(-(n_range - x2)**2 / (4 * sigma2**2)) * np.exp(1j * k2 * n_range)
     
-    return coeffs
+    vec = np.zeros(2**num_sites, dtype=complex)
+    for n in range(num_sites):
+        for m in range(n + 1, num_sites):
+            # Normalization might be slightly off if they overlap, but usually they don't.
+            coeff = c1[n] * c2[m] + c1[m] * c2[n]
+            idx = (1 << n) | (1 << m)
+            vec[idx] = coeff
+            
+    norm = np.linalg.norm(vec)
+    if norm > 1e-12:
+        vec /= norm
+        
+    if backend_type == "qiskit":
+        return Statevector(vec)
+    return vec
+def prepare_2d_wavepacket_state(
+    Lx: int, Ly: int,
+    x0: float, y0: float,
+    kx: float, ky: float,
+    sigma: float,
+    backend_type: str = "numpy"
+) -> Any:
+    """
+    Gaussian wavepacket in 2D.
+    """
+    num_sites = Lx * Ly
+    vec = np.zeros(2**num_sites, dtype=complex)
+    
+    for ny in range(Ly):
+        for nx in range(Lx):
+            idx = ny * Lx + nx
+            # Amplitude
+            amp = np.exp(-((nx - x0)**2 + (ny - y0)**2) / (4 * sigma**2))
+            # Phase
+            phase = np.exp(1j * (kx * nx + ky * ny))
+            vec[1 << idx] = amp * phase
+            
+    norm = np.linalg.norm(vec)
+    if norm > 1e-12:
+        vec /= norm
+        
+    if backend_type == "qiskit":
+        return Statevector(vec)
+    return vec
+
+def prepare_two_wavepacket_state_2d(
+    Lx: int, Ly: int,
+    x1: float, y1: float, kx1: float, ky1: float, sigma1: float,
+    x2: float, y2: float, kx2: float, ky2: float, sigma2: float,
+    backend_type: str = "numpy"
+) -> Any:
+    """
+    Two wavepackets in 2D in the 2-excitation sector.
+    """
+    num_sites = Lx * Ly
+    vec = np.zeros(2**num_sites, dtype=complex)
+    
+    # Precompute c1, c2
+    c1 = np.zeros(num_sites, dtype=complex)
+    c2 = np.zeros(num_sites, dtype=complex)
+    for ny in range(Ly):
+        for nx in range(Lx):
+            idx = ny * Lx + nx
+            c1[idx] = np.exp(-((nx - x1)**2 + (ny - y1)**2) / (4 * sigma1**2)) * np.exp(1j * (kx1 * nx + ky1 * ny))
+            c2[idx] = np.exp(-((nx - x2)**2 + (ny - y2)**2) / (4 * sigma2**2)) * np.exp(1j * (kx2 * nx + ky2 * ny))
+            
+    for i in range(num_sites):
+        for j in range(i + 1, num_sites):
+            coeff = c1[i] * c2[j] + c1[j] * c2[i]
+            vec[(1 << i) | (1 << j)] = coeff
+            
+    norm = np.linalg.norm(vec)
+    if norm > 1e-12:
+        vec /= norm
+        
+    if backend_type == "qiskit":
+        return Statevector(vec)
+    return vec

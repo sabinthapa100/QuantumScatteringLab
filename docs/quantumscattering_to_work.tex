@@ -1,0 +1,570 @@
+\documentclass{article}
+\usepackage{subfiles}
+% Language setting
+% Replace `english' with e.g. `spanish' to change the document language
+\usepackage[english]{babel}
+% Useful packages
+\usepackage{graphicx}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+\usepackage{amsthm}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{slashed}
+\usepackage{amssymb}
+\usepackage{float}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{braket}
+\newcommand{\redflag}[1]{{\color{red} #1}}
+\newcommand{\strikeout}[1]{{\color{red} \st{#1}}}
+\newcommand{\bs}{\boldsymbol}
+\newcommand{\Tr}{\mathrm{Tr}}
+
+
+% Set page size and margins
+% Replace `letterpaper' with `a4paper' for UK/EU standard size
+\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+\title{Quantum Scattering: real time elastic and inelastic scattering in Quantum Computers}
+\author{Sabin Thapa}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Perform real time quantum simulation of scattering (elastic and inelastic) in quantum field theories (different models) using W states \cite{Farrell:2025nkx, Farrell:2024fit, Tate:2024kma, Jha:2024jan} (or other states).
+\end{abstract}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction: Quantum Field Theories}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\cite{Sinha:2025hyq}
+
+In the Quantum Field Theories (QFT), scattering is a fundamental process in which particles travel towards each other, collide and eventually form an asymptotic state. The evolution of the quantum state throughout the collision encodes information about the interactions, particle content and mechanisms that govern dynamics in the theory \cite{Farrell:2025nkx}. We will study both elastic and inelastic collision cases.
+%%%%
+\subsection{1D Ising Field Theory Hamiltonian}
+%%%
+The Hamiltonian for the critical Ising model with both transverse and longitudinal fields is defined as (Eq. 5 in paper):
+\begin{equation}
+    \hat{H} = -\sum_{n=0}^{L-1} \left[ 
+    \frac{1}{2} \hat{Z}_n \hat{Z}_{n+1} + g_x \hat{X}_n + g_z \hat{Z}_n 
+    \right]
+\end{equation}
+%%%%%
+where periodic or open boundary conditions (PBC or OBC) are assumed ($\hat{Z}_L \equiv \hat{Z}_0$).
+
+For the 1D Ising Hamiltonian, we can construct the symmetry-preserving pool of operators $\{ \hat{O}_{\rm 1d \, Ising}\}$ such that we can use ADAPT-VQE to optimize parameterized circuits $\{ e^{i \theta \hat{O}}\}$, enforcing reality and hermiticity constrains all pool operators to be imaginary and anti-symmetric, and all those operators are generated from $i \sum_n [\hat{H}, \hat{X}_n]$ and $i \sum_n [\hat{H},[\hat{H},[\hat{H}, [ \hat{X}_n]]]$ is found to be effective, and given as,
+
+%%
+\begin{align*}
+\hat{O}_{1} &= \sum_{n=0}^{L-1} \hat{Y}_n \\
+\hat{O}_2 &= \sum_{n=0}^{L-1} \hat{Z}_{n} \hat{Y}_{n+1} \hat{Y}_{n+2} \\
+\hat{O}_3 &=  \sum_{n=0}^{L-1} \left( \hat{Y}_n \hat{Z}_{n+1} + \hat{Z}_n \hat{Y}_{n+1} \right) \\
+\hat{O}_4 &=  \sum_{n=0}^{L-1} \left( \hat{Y}_n \hat{X}_{n+1} + \hat{X}_n \hat{Y}_{n+1} \right) \\ 
+\hat{O}_5 &= \sum_{n=0}^{L-1} \left( \hat{Z}_n \hat{X}_{n+1} \hat{Y}_{n+2} + \hat{Y}_n \hat{X}_{n+1} \hat{Z}_{n+2} \right)
+\end{align*}
+%%%
+
+
+
+
+\newpage
+\textbf{Note}: Numerical Constants (Fig. 8 \& Table VII)
+To approach the field-theory limit, the authors use specific couplings near criticality ($g_x=1, g_z=0$):
+%%
+\begin{itemize}
+    \item \textbf{System Size:} $L = 9, 15, 21, 31$ 
+    \item \textbf{Couplings:} $(g_x, g_z) \in \{(1.08,0.03),(1.15,0.05),(1.18,0.08),(1.25,0.15)\}$
+    \item \textbf{Wavepacket Momentum:} $k_0 = 0.36\pi$
+    \item \textbf{Wavepacket Width:} $\sigma = 0.13$
+    \item \textbf{Mass:} $m \approx 1.59$
+\end{itemize}
+%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+
+%%%%
+\subsection{Heisenberg Hamiltonian: (2+1)D SU(2) Lattice Gauge Theory Mapped to Spin Chain}
+%%%%
+The strong nuclear force is explained by Quantum Chromodynamics (QCD), a non-abelian SU(3) gauge theory that is complex and challenging to simulate even on the currently available noisy quantum hardware \cite{Preskill:2018fag}. However, SU(2) gauge theory, a simpler non-abelian gauge theory, shares several features with QCD and serves as a useful model, and the ground state preparation of $(2+1)$ dimensional SU(2) gauge theory is never done before. For a $(2+1)$ dimensional SU(2) lattice gauge theory, the Kogut-Susskind Hamiltonian can be expressed as the sum of energy contributions from the chromoelectric and chromomagnetic fields ~\cite{Kogut:1974ag}:
+%%%%%%%%
+\begin{align}
+\label{eqn:H}
+H = \frac{g^2}{2}\sum_{\rm links} (E_i^a)^2 - \frac{2}{a^2g^2} \sum_{\rm plaquettes} Z({\bf n}) \,,
+\end{align}
+%%%%%%%
+where $a$ in the denominator is the lattice spacing and in the superscript denotes SU(2) gauge group indices that are implicitly summed over, $i = x$ or $y$ denotes spatial directions (implicitly summed), ${\bf n} = (n_x, n_y)$ represents a lattice point, $Z({\bf n})$ is the plaquette operator. 
+
+This Hamiltonian for SU(2) gauge theory can be mapped onto a quantum spin chain by defining it in a $(2+1)$ dimensional plaquatte chain \cite{Yao:2023pht} as the sum of electric $ H_E $ and magnetic part $H_M$ as $H = H_E + H_M $, where
+%%
+\begin{equation}
+    H_{E} = J \sum_{i=0}^{N-1}\sigma_i^z\sigma_{i+1}^z + h_z \sum_{i=0}^{N-1}\sigma_i^z \, , \quad
+   H_M = \frac{h_x}{16} \sum_{i=0}^{N-1} ( \sigma_i^x - 3\sigma_{i-1}^z \sigma_i^x - 3\sigma_i^x\sigma_{i+1}^z + 9 \sigma_{i-1}^z \sigma_i^x \sigma_{i+1}^z ) \, ,
+\end{equation}
+%%
+with $J = -3g^2/16$, $h_z=3g^2/8$ and $h_x = -2/(ag)^2$. Under the periodic boundary condition, $\sigma_N^i=\sigma_0^i$. 
+
+Construct a symmetry-respecting pool of operators \( \{\hat{O}_1, \hat{O}_2, \dots, \hat{O}_k\} \).  
+Operators must be anti-Hermitian and imaginary to ensure physical validity of generated states.
+
+From the Hamiltonian, we identify a set of real operators:
+%%%
+\begin{align*}
+\hat{A}_1 &= \sum_{i=1}^{N-1} Z_i \\
+\hat{A}_2 &= \sum_{i=1}^{N-1} Z_i Z_{i+1} \\
+\hat{A}_3 &= \sum_{i=1}^{N-1} X_i \\
+\hat{A}_4 &= \sum_{i=1}^{N-1} Z_{i-1} X_i \\
+\hat{A}_5 &= \sum_{i=1}^{N-1} X_i Z_{i+1} \\
+\hat{A}_6 &= \sum_{i=1}^{N-1} Z_{i-1} X_i Z_{i+1}
+\end{align*}
+%%%
+We then generate the anti-Hermitian operator pool:
+%%%
+\begin{align*}
+\hat{O}_1 &= \sum_{i=1}^{N-1} Y_i \\
+\hat{O}_2 &= \sum_{i=1}^{N-1} Y_i Z_{i+1} \\
+\hat{O}_3 &= \sum_{i=1}^{N-1} Z_i Y_{i+1} \\
+\hat{O}_4 &= \sum_{i=1}^{N-1} Z_{i-1} Y_i Z_{i+1}
+\end{align*}
+%%%%%%%%
+
+
+%%%%
+\subsection{2D Ising Field Theory}
+%%%
+The Hamiltonian for 2D Ising model on a PBC square lattice is,
+%%%
+\begin{equation}
+    \hat{H} = -\sum_{\langle i,j \rangle} Z_i Z_j - \sum_{i} \left( g_x X_i + g_z Z_i \right)
+\end{equation}
+%%%%%
+where the first sum is the nearest neighbors $\langle i,j \rangle$ and the second is over every lattice site. It has symmetry in both $x,y$-directions as well as symmetry under $\pi/2$ rotations. On an infinite lattice and at the critical point, $g_c = 3.04438(2)$ and $g_z=0$, \cite{Farrell:2025nkx} this system is described by the 3D Ising Conformal Field Theory (CFT).
+
+
+For the 2D Ising Hamiltonian, a symmetry-respecting and translationally-invariant operator pool $\{\hat{O}_{\rm 2d \, Ising}\}$ can be constructed analogously. Enforcing reality and hermiticity constraints,
+the pool operators are imaginary and anti-Hermitian. The union of all unique operators generated from
+$i \sum_n [\hat{H}, \hat{X}_n]$ and $i \sum_n [\hat{H},[\hat{H},[\hat{H},\hat{X}_n]]]$ (up to third-order commutators)
+is found to be effective~\cite{Farrell:2025nkx}. Those operators are,
+
+%%%%
+\begin{align*}
+\hat{O}_1
+&= \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \hat{Y}_{n_x,n_y}, \\[1em]
+\hat{O}_2
+&= \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \Bigl(
+\hat{Y}_{n_x,n_y}\hat{Z}_{n_x+1,n_y} + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x+1,n_y}
++ \hat{Y}_{n_x,n_y}\hat{Z}_{n_x,n_y+1} + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y+1}
+\Bigr), \\[1em]
+\hat{O}_3
+&= \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \Bigl(
+\hat{Y}_{n_x,n_y}\hat{X}_{n_x+1,n_y} + \hat{X}_{n_x,n_y}\hat{Y}_{n_x+1,n_y}
++ \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y+1} + \hat{X}_{n_x,n_y}\hat{Y}_{n_x,n_y+1}
+\Bigr), \\[1em]
+\hat{O}_4
+&= \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \Bigl(
+\hat{Z}_{n_x,n_y}\hat{Y}_{n_x+1,n_y}\hat{Z}_{n_x+2,n_y}
++ \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y+1}\hat{Z}_{n_x,n_y+2}
+\Bigr), \\[1em]
+\hat{O}_5
+&= \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \Bigl(
+\hat{Z}_{n_x,n_y}\hat{X}_{n_x+1,n_y}\hat{Y}_{n_x+2,n_y}
++ \hat{Y}_{n_x,n_y}\hat{X}_{n_x+1,n_y}\hat{Z}_{n_x+2,n_y}
++ \hat{Z}_{n_x,n_y}\hat{X}_{n_x,n_y+1}\hat{Y}_{n_x,n_y+2}
++ \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y+1}\hat{Z}_{n_x,n_y+2}
+\Bigr), \\[1em]
+\hat{O}_6
+&= \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \Bigl(
+\hat{Z}_{n_x,n_y}\hat{Y}_{n_x+1,n_y}\hat{Z}_{n_x+1,n_y+1}
++ \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y+1}\hat{Z}_{n_x-1,n_y+1}
++ \hat{Z}_{n_x,n_y}\hat{Y}_{n_x-1,n_y}\hat{Z}_{n_x-1,n_y-1}
++ \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y-1}\hat{Z}_{n_x+1,n_y-1}
+\Bigr), \\[1em]
+\hat{O}_7
+&= \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \Bigl(
+\hat{Z}_{n_x,n_y}\hat{X}_{n_x+1,n_y}\hat{Y}_{n_x+1,n_y+1}
++ \hat{Z}_{n_x,n_y}\hat{X}_{n_x,n_y+1}\hat{Y}_{n_x-1,n_y+1}
++ \hat{Z}_{n_x,n_y}\hat{X}_{n_x-1,n_y}\hat{Y}_{n_x-1,n_y-1}
++ \hat{Z}_{n_x,n_y}\hat{X}_{n_x,n_y-1}\hat{Y}_{n_x+1,n_y-1} \notag \\
+&\quad + \hat{Y}_{n_x,n_y}\hat{X}_{n_x+1,n_y}\hat{Z}_{n_x+1,n_y+1}
++ \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y+1}\hat{Z}_{n_x-1,n_y+1}
++ \hat{Y}_{n_x,n_y}\hat{X}_{n_x-1,n_y}\hat{Z}_{n_x-1,n_y-1}
++ \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y-1}\hat{Z}_{n_x+1,n_y-1}
+\Bigr), \\[1em]
+\hat{O}_8
+&= \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \Bigl(
+\hat{Y}_{n_x,n_y}\hat{Z}_{n_x+1,n_y}\hat{Z}_{n_x-1,n_y}
++ \hat{Y}_{n_x,n_y}\hat{Z}_{n_x,n_y+1}\hat{Z}_{n_x,n_y-1}
++ \hat{Y}_{n_x,n_y}\hat{Z}_{n_x+1,n_y}\hat{Z}_{n_x,n_y+1}
++ \hat{Y}_{n_x,n_y}\hat{Z}_{n_x-1,n_y}\hat{Z}_{n_x,n_y-1} \notag \\
+&\quad + \hat{Y}_{n_x,n_y}\hat{Z}_{n_x-1,n_y}\hat{Z}_{n_x,n_y+1}
++ \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y-1}
+\Bigr).
+\end{align*}
+
+
+
+
+% The next step in wavepacket preparation is to minimize the energy using translationally-invariant and real circuits starting from $\ket{W(k_0)}$. This is done using ADAPT-VQE and an operator pool inspired by the Lie algebra of the Hamiltonian is found to be effective. Keeping all unique operators up to third-order commutators, $i\sum_n[\hat{H},\hat{X}_n]$ and $i\sum_n[\hat{H},[\hat{H},[\hat{H},\hat{X}_n]]]$, gives an operator pool, \cite{Farrell:2025nkx},
+% %%%%
+% \begin{align}
+% \{\hat{O}\}_{2\mathrm{d}\,\mathrm{Ising}}
+% ={}& \sum_{n_x=0}^{L-1} \sum_{n_y=0}^{L-1} \Bigg\{
+% \hat{Y}_{n_x,n_y}, \notag \\
+% &\qquad
+% (\hat{Y}_{n_x,n_y}\hat{Z}_{n_x+1,n_y} + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x+1,n_y}
+% + \hat{Y}_{n_x,n_y}\hat{Z}_{n_x,n_y+1} + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y+1}), \notag \\
+% &\qquad
+% (\hat{Y}_{n_x,n_y}\hat{X}_{n_x+1,n_y} + \hat{X}_{n_x,n_y}\hat{Y}_{n_x+1,n_y}
+% + \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y+1} + \hat{X}_{n_x,n_y}\hat{Y}_{n_x,n_y+1}), \notag \\
+% &\qquad
+% (\hat{Z}_{n_x,n_y}\hat{Y}_{n_x+1,n_y}\hat{Z}_{n_x+2,n_y}
+% + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y+1}\hat{Z}_{n_x,n_y+2}), \notag \\
+% &\qquad
+% \bigl(
+% \hat{Z}_{n_x,n_y}\hat{X}_{n_x+1,n_y}\hat{Y}_{n_x+2,n_y}
+% + \hat{Y}_{n_x,n_y}\hat{X}_{n_x+1,n_y}\hat{Z}_{n_x+2,n_y} \notag \\
+% &\qquad\qquad
+% + \hat{Z}_{n_x,n_y}\hat{X}_{n_x,n_y+1}\hat{Y}_{n_x,n_y+2}
+% + \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y+1}\hat{Z}_{n_x,n_y+2} \notag \\
+% &\qquad\qquad
+% + \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y+1}\hat{Z}_{n_x,n_y+2}
+% \bigr), \notag \\
+% &\qquad
+% \bigl(
+% \hat{Z}_{n_x,n_y}\hat{Y}_{n_x+1,n_y}\hat{Z}_{n_x+1,n_y+1}
+% + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y+1}\hat{Z}_{n_x-1,n_y+1} \notag \\
+% &\qquad\qquad
+% + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x-1,n_y}\hat{Z}_{n_x-1,n_y-1}
+% + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y-1}\hat{Z}_{n_x+1,n_y-1}
+% \bigr), \notag \\
+% &\qquad
+% \bigl(
+% \hat{Z}_{n_x,n_y}\hat{X}_{n_x+1,n_y}\hat{Y}_{n_x+1,n_y+1}
+% + \hat{Z}_{n_x,n_y}\hat{X}_{n_x,n_y}\hat{Y}_{n_x-1,n_y+1} \notag \\
+% &\qquad\qquad
+% + \hat{Z}_{n_x,n_y}\hat{X}_{n_x-1,n_y}\hat{Y}_{n_x-1,n_y-1}
+% + \hat{Z}_{n_x,n_y}\hat{X}_{n_x,n_y-1}\hat{Y}_{n_x+1,n_y-1} \notag \\
+% &\qquad\qquad
+% + \hat{Y}_{n_x,n_y}\hat{X}_{n_x+1,n_y}\hat{Z}_{n_x+1,n_y+1}
+% + \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y}\hat{Z}_{n_x-1,n_y+1} \notag \\
+% &\qquad\qquad
+% + \hat{Y}_{n_x,n_y}\hat{X}_{n_x-1,n_y}\hat{Z}_{n_x-1,n_y-1}
+% + \hat{Y}_{n_x,n_y}\hat{X}_{n_x,n_y-1}\hat{Z}_{n_x+1,n_y-1}
+% \bigr), \notag \\
+% &\qquad
+% \bigl(
+% \hat{Y}_{n_x,n_y}\hat{Z}_{n_x+1,n_y}\hat{Z}_{n_x-1,n_y}
+% + \hat{Y}_{n_x,n_y}\hat{Z}_{n_x,n_y+1}\hat{Z}_{n_x,n_y-1} \notag \\
+% &\qquad\qquad
+% + \hat{Y}_{n_x,n_y}\hat{Z}_{n_x+1,n_y}\hat{Z}_{n_x,n_y+1}
+% + \hat{Y}_{n_x,n_y}\hat{Z}_{n_x-1,n_y}\hat{Z}_{n_x,n_y-1}
+% \bigr) \notag \\
+% &\qquad
+% + \hat{Y}_{n_x,n_y}\hat{Z}_{n_x-1,n_y}\hat{Z}_{n_x,n_y+1}
+% + \hat{Z}_{n_x,n_y}\hat{Y}_{n_x,n_y-1}
+% \Bigg\}
+% \end{align}
+% %%%%%
+
+
+%%%%%%%%%%%%%%%%%%
+\section{General Algorithm of Quantum Scattering Experiments}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Performing real time scattering experiments in high energy collisions is the interest and challenge. Here we will discuss it. 
+
+The algorithm:
+\begin{itemize}
+    \item Prepare Initial Wave Packet: this is the challenge
+
+    \item Take two particles wave packets, propagate those in time, then measure after some long time simulation and see how things go
+\end{itemize}
+
+
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Initial State}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+
+The algorithm for the quantum scattering (starting from initial state preparation to scattering observable measurement) is given below,
+
+
+\begin{enumerate}
+    \item Prepare the initial state (wave-packet): superposition of single-particle eigenstates that are localized around a position $x_0$ and a momentum $k_0$, with spread in the momentum space $\sigma_k$ and in position space $\sim \sigma_k^{-1}$ (small spread in momentum space corresponds to large spread in position space and vice-versa),
+    %
+    \begin{equation}
+        \ket{\psi_{\rm wp}} = \mathcal{N} \sum_{k} e^{- ikx_0} e^{- (k_0 - k)^2/(4\sigma_k^2)} \ket{\psi_k}
+        \label{eq:wavepacket1}
+    \end{equation}
+    %
+    where $\mathcal{N}$ is the normalization factor and $\psi_k$ is the single-particle eigenstate with momentum $k$. The sum runs ovre $k\in \frac{2\pi n}{L}$, where $L$ is the number of lattice sites, $n$ is an integer such that $k\in (-\pi,\pi]$. A wavepacket that propagates to the right (left) will have the bulk of its amplitude in eigenstates with $k > 0$ ($k < 0$).
+    
+    \begin{itemize}
+        \item \textbf{Prepare $\ket{\psi_k}$ with $k \neq 0$:}
+        First, for some state $\ket{k}$ in a definite momentum block of the Hamiltonian (i.e., an eigenstate under spatial translations $e^{-i \hat{k}n}\ket{k} = e^{-ikn}\ket{k}$) is initialized. One simple choice for $\ket{k}$ is the superposition of all states related by translation to $\ket{00 \ldots 001}$ weighted by the appropriate phase. This assumes a basis where $\ket{00 \ldots 001}$ has the quantum numbers of the target single-particle state. For example, in scalar field theory, single-particle states are odd under the $Z_2$ symmetry that takes $\phi \to - \phi$. If one lattice site maps to one qubit, this state would be,
+        %
+        \begin{equation}
+            \ket{k} = \frac{1}{\sqrt{L}} \sum_{n=0}^{L-1} e^{ikn} \ket{2^n} \, ,
+        \end{equation}
+        %
+        where the state is specified by its binary value on $L$ bits, e.g., $\ket{2^1} = \ket{00\ldots010}$. This state is in the correct $k$ block of the Hamiltonian but needs to be rotated to the lowest energy state. A circuit that approximately implements this rotation \( |\psi_k\rangle \approx \hat{U}(\hat{\theta}_*)|k\rangle \) can be determined by minimizing the energy,
+        %
+        \begin{equation}
+        \hat{U}(\hat{\theta}_*) = \textbf{argmin} {\langle  \psi_{\text{ansatz}} | \hat{U}(\hat{\theta})^\dagger \hat{H}   \hat{U}(\hat{\theta}) | \psi_{\text{ansatz}} \rangle},
+        \end{equation}
+        %
+
+        where \( |\psi_{\text{ansatz}}\rangle = |k\rangle \) and \( \hat{U}(\hat{\theta}) \) is a translationally-invariant unitary operator \( e^{i k n} \hat{U}(\hat{\theta}) e^{-i k n} = \hat{U}(\hat{\theta}) \) that depends on variational parameters \( \hat{\theta} \). This circuit must also preserve the other quantum numbers of \( |\psi_k\rangle \), and translational invariance ensures that the resulting state remains in the correct \( k \) block of the Hamiltonian. This forms the basis for a variational algorithm, and circuits that prepare \( |k\rangle \) and minimize the energy can readily be constructed.
+
+        \item \textbf{Generalize to prepare  wave-packet $\ket{\psi_{\rm wp}}$ with $k \neq 0$:}
+        Initialize some state $\ket{W(k_0)}$ with correct amplitude $e^{- (k_0 - k)^2/(4\sigma_k^2)}$ or phase  $e^{- ikx_0}$ in each $k$ block of the Hamiltonian, a simple choice being a wavepacket built from $\ket{k}$ as,
+         %
+        \begin{eqnarray}
+            \ket{W(k_0)} && = \mathcal{N} \sum_{k} e^{- ikx_0} e^{- (k_0 - k)^2/(4\sigma_k^2)} \ket{k} \nonumber \\
+            && =  \sum_{n} e^{i\phi_n} c_n \ket{2^n} \, ,
+            \label{eq:wstate1}
+        \end{eqnarray}
+        %       
+        where the magnitude of $c_n$ follows a Gaussian centered
+        at $n = x_0$. The special case of a uniform superposition is
+the W state \cite{Dur:2000zz}. 
+
+        From \ref{eq:wstate1}, on the $d$ lattice sites (out of total $L$ sites), efficient preparation of the state can be written as,
+          %
+        \begin{equation}
+            \ket{W(k_0)} = \sum_{n}^{d-1} e^{i\phi_n} c_n \ket{2^n}
+            \label{eq:wstate2}
+        \end{equation}
+        %        
+
+        For $\phi_n=0$ and $c_n = 1/\sqrt{d}$, this reduces to the $W$ state.
+
+        
+        \redflag{The efficient preparation of wavepackets is a prerequisite for achieving a quantum advantage in simulations of scattering. We will explore to use ADAPT-VQE, which
+provides an efficient framework for symmetry-aware optimization, or other algorithm (QAOA) \cite{Tate:2024kma} in this step}.
+    \end{itemize}
+    %%
+
+
+
+
+
+
+
+
+
+
+    
+    \item Perform Scattering with the Hamiltonian:
+    
+    The initial wave-packet (of two particles undergoing scattering are separated in space) $\psi_2wp$ is evolved under the Ising model Hamiltonian (dimensionless) given as,
+    %
+    \begin{equation}
+        \hat{H} = - \sum_{n=0}^{L-1} \left[ \frac{1}{2} \left( \hat{Z}_{n-1} \hat{Z}_{n} + \hat{Z}_{n} \hat{Z}_{n+1} \right) + g_x \hat{X}_n + g_z \hat{Z}_n \right]  \equiv \sum_{n=0}^{L-1} \hat{H}_n,
+        \label{eq:ham}
+    \end{equation}      
+    %
+    with $g_x = 1.25$ and $g_z = 0.15$ where there are two stable particles: one light particle $\ket{1}$ with mass $m_1 = 1.59$ and one heavy particle $\ket{2}$ with mass $m_2 = 2.98$.
+    
+    The initial state for our scattering simulations consists of two wavepackets of $\ket{1}$ particles that are separated in space. As time goes on, they travel towards each other, collide, and separate. For low center-of-mass energies $E_{\rm tot}$, only the elastic process $11 \to 11$ is kinematically allowed. The lowest-energy inelastic process is $11 \to 12$ where a single heavy $\ket{2}$ particle is produced during the collision. The inelastic channel opens up for the energies above particle production threshold, $E_{\rm tot} > E_{\rm thr} = m_1 + m_2 = 4.57$ (detected from the additional outgoing tracks n the energy density -- if we plot energy density heatmap throughout the scattering process as a function of lattice position $n$ and time $t$.
+
+    We have to evolve the initial 2-particle (separated in space) quantum state using the unitary evolution $\hat{U}(t)$ using the Hamiltonian \ref{eq:ham} as,
+    %
+    \begin{equation}
+        \hat{U} (t) = e^{-i\hat{H} t},
+        \label{eq:unitary}
+    \end{equation}      
+    %    
+    using Trotterization.
+    
+    \item Observable: \textbf{Energy density}: we measure vacuum-subtracted energy density is given as,
+    %
+    \begin{equation}
+        E_n = \braket{\psi_{\rm 2wp} | \hat{H}_n (t)| \psi_{\rm 2wp}} - \braket{\psi_{\rm vac} | \hat{H}_n (t) | \psi_{\rm vac}} \, .
+        \label{eq:eden}
+    \end{equation}      
+    %       
+    Here, $\hat{H}_n (t) = \hat{U}^\dagger(t) \hat{H}_n \hat{U}(t) $ with $\hat{H}_n$ defined in \ref{eq:ham}, and $\psi_{\rm vac}$ is the prepared vacuum.
+
+    %We also evolve vacuum state $e^{-i\hat{H} t} \psi_{\rm vac}$.  The time evolution of the vacuum energy density is used to learn the parameters of the Pauli noise channel.
+    We will try to perform simulation until $t = 25$ (in current hardware).
+\end{enumerate}
+%
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Variational Quantum Algorithms (VQAs)}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+The Variational Quantum Eigensolver (VQE) \cite{Peruzzo:2013bzg, Reiner_2019} is a quantum algorithm for the optimization problem, and is based on the variational principle. This is hybrid quantum-classical algorithm as the task is shared between the quantum and classical hardware: the classical part for the optimization and quantum part for the state preparation and measurement. 
+
+Based on a variational principle:
+
+\begin{eqnarray}
+    E_{GS} \leq \langle \psi(\theta)|H|\psi(\theta)\rangle
+\end{eqnarray}
+
+These algorithms rely on the initial guess function $\psi(\theta)$  called ansatz.
+
+\subsection{ADAPT-VQE}
+Construct ansatz dynamically using physically motivated operators.
+ADAPT-VQE: builds ansatz adaptively based on energy gradient yet with deep circuit and measurement overhead \cite{Grimsley:2018wnd}. 
+SC-ADAPT-VQE: symmetry-constrained improved version to obtain scalable circuit, use classical simulator to determine the ADAPT-VQE state preparation circuits \cite{Farrell:2023fgd}.
+
+We employ the Adaptive Derivative-Assembled Problem-Tailored (ADAPT)-VQE algorithm to prepare the ground state of the wavepacket \ref{eq:wavepacket1}. The details of the algorithm are:
+
+\textbf{Step 1:} Construct a symmetry-respecting pool of operators $\{ \hat{O}_{\rm 1d \, Ising}\}$. Enforcing the reality and hermiticity constraints all pool operators to be imaginary and anti-symmetric, and the union of all unique operators generated from $i\sum_n [\hat{H}_n,\hat{X}_n]$ and $i\sum_n [\hat{H}_n,[\hat{H}_n,[\hat{H}_n,\hat{X}_n]]]$ (found effective \cite{Farrell:2025nkx}),$\{\hat{O}_1,
+\hat{O}_2, \hat{O}_3,
+\hat{O}_4, \ldots , \hat{O}_n\}$
+
+\textbf{Step 2:} Initialize the quantum state with the reference state \( \ket{\psi_{\text{ref}}} \).
+
+The ansatz is dynamically built as:
+\begin{equation}
+\ket{\psi_{\text{ansatz}}} = \cdots e^{i \theta_3 \hat{O}_3} e^{i \theta_2 \hat{O}_2} e^{i \theta_1 \hat{O}_1} \ket{\psi_{\text{ref}}}
+\end{equation}
+
+\textbf{Step 3:} For each operator \( \hat{O}_i \), evaluate the energy gradient at \(\theta_i = 0\):
+\begin{equation}
+\left.\frac{\partial E}{\partial \theta_i}\right|_{\theta_i = 0} = \left\langle \psi_{\text{ansatz}}^{(k)} \left| [\hat{H}, \hat{O}_i] \right| \psi_{\text{ansatz}}^{(k)} \right\rangle
+\end{equation}
+
+This is equivalent to:
+\begin{equation}
+\left.\frac{\partial }{\partial \theta_i} \left\langle \psi_{\text{ansatz}}^{(k)} \left| e^{-i\theta_i \hat{O}_i} H e^{i\theta_i \hat{O}_i} \right| \psi_{\text{ansatz}}^{(k)} \right\rangle \right|_{\theta_i=0}
+\end{equation}
+
+Add the operator \( \hat{O}_n \) with the largest gradient magnitude to the ansatz.
+
+\textbf{Step 4:} Perform ordinary VQE to optimize all \(\theta_j\) parameters in the current ansatz.
+
+\textbf{Step 5:} Repeat steps 1–4 until convergence. If the maximum energy gradient is below a specified threshold \(\epsilon\), terminate.
+
+\subsection*{Final Ansatz Form}
+
+After \(k\) iterations, the ansatz takes the form:
+\begin{equation}
+\ket{\psi_k} = e^{i \theta_k \hat{O}_k} \cdots e^{i \theta_2 \hat{O}_2} e^{i \theta_1 \hat{O}_1} \ket{\psi_0}
+\end{equation}
+
+At each iteration, the energy gradient with respect to candidate operator \(\hat{O}_i\) is computed again using the same commutator expression above.
+
+\vspace{0.5cm}
+$|\psi_{\text{ansatz}}\rangle \xrightarrow{} e^{i \theta_k \hat{O}_k |\psi_{\text{ansatz}}\rangle}$
+\vspace{1cm}
+
+$\min_{\vec{\theta}} \,  \langle \psi(\vec{\theta}) | \hat{H} | \psi(\vec{\theta}) \rangle$
+\vspace{1cm}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  \section{Results}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Proposed Project Design and Implementation Plan}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+To achieve a portfolio-quality implementation suitable for world-class research groups (e.g., Google Quantum AI), we propose a rigorous, modular, and scalable software architecture. This design prioritizes extensibility (easy addition of new models), performance (GPU acceleration), and reproducibility.
+
+\subsection{Software Architecture: The QuantumScattering Framework}
+
+We adopt a \textbf{Factory Pattern} to manage the complexity of multiple models (1D Ising, 2D Ising, SU(2)).
+
+\begin{itemize}
+    \item \textbf{Abstract Base Class (`QuantumModel`)}: Defines the interface for all models.
+    \begin{itemize}
+        \item \texttt{get\_hamiltonian(params)}: Returns the Hamiltonian as a sparse operator or MPO.
+        \item \texttt{get\_operator\_pool()}: Returns the model-specific operator pool for ADAPT-VQE.
+        \item \texttt{get\_reference\_state()}: Returns the initial Hartree-Fock/mean-field state.
+    \end{itemize}
+    \item \textbf{Concrete Implementations}:
+    \begin{itemize}
+        \item \texttt{IsingModel1D}: Implements the standard transverse-field Ising chain.
+        \item \texttt{IsingModel2D}: Implements the 2D lattice on a torus (PBC) or plane (OBC).
+        \item \texttt{SU2GaugeModel}: Implements the mapped Kogut-Susskind Hamiltonian.
+    \end{itemize}
+\end{itemize}
+
+\subsection{High-Performance Simulation with Quimb and GPU}
+
+For classical simulation of quantum circuits and tensor networks, we utilize \textbf{Quimb} (\texttt{quimb.tensor}), which supports GPU acceleration via \textbf{CuPy}. This is essential for simulating larger system sizes ($N > 20$ for exact, $N \sim 100$ for MPS) and deeper circuits required for scattering.
+
+\textbf{Implementation Strategy:}
+\begin{verbatim}
+import quimb.tensor as qtn
+import cupy as cp
+
+# Configure Quimb to use CuPy backend for GPU acceleration
+qtn.set_tensor_linop_backend('cupy')
+
+def run_simulation_gpu(psi_mps, gate_seq):
+    # Apply gates efficiently on GPU-resident MPS
+    for gate in gate_seq:
+        psi_mps.gate_(gate, tags={'LAYER'})
+    return psi_mps
+\end{verbatim}
+
+\subsection{Rigorous Operator Pools for ADAPT-VQE}
+
+The success of ADAPT-VQE depends critically on the operator pool. We define pools generated by the Lie algebra of the Hamiltonian, ensuring they preserve all relevant symmetries (translational, parity, etc.).
+
+\subsubsection{1. 1D Ising Model Pool}
+As derived previously, the pool consists of anti-Hermitian operators generated by commutators of $H$:
+\[ \{ \hat{Y}_i, \hat{Z}_i \hat{Y}_{i+1}, \hat{Y}_i \hat{Z}_{i+1} \} \]
+Higher orders include 3-body terms like $\hat{Z}_i \hat{Y}_{i+1} \hat{X}_{i+2}$, but the minimal pool is often sufficient for ground state preparation.
+
+\subsubsection{2. 2D Ising Model Pool}
+For the 2D lattice, we strictly follow the symmetry-preserving pool derived from 3rd-order commutators (as listed in Section 3):
+\[ \{ \hat{Y}_{\bs{n}}, \hat{Y}_{\bs{n}}\hat{Z}_{\bs{n}+\hat{x}}, \hat{Z}_{\bs{n}}\hat{Y}_{\bs{n}+\hat{x}}, \hat{Y}_{\bs{n}}\hat{Z}_{\bs{n}+\hat{y}}, \dots \} \]
+
+\subsubsection{3. SU(2) Lattice Gauge Theory Pool (Heisenberg Mapping)}
+The SU(2) Hamiltonian $H = H_E + H_M$ mixes $Z$-diagonal terms ($H_E$) with off-diagonal magnetic terms ($H_M$). To generate the ADAPT-VQE pool, we compute the commutators $[H_E, \hat{O}_k]$ where $\hat{O}_k$ are terms in $H_M$.
+Given $H_E \sim \sum Z_i Z_{i+1}$ and terms in $H_M$ like $X_i, Z_{i-1}X_i Z_{i+1}$, the first-order commutators yield the following anti-Hermitian pool:
+
+\begin{align}
+\label{eq:su2_pool}
+\mathcal{P}_{SU(2)} = \bigcup_{i} \left\{ 
+\begin{aligned}
+& \hat{Y}_i, \\
+& \hat{Y}_i \hat{Z}_{i+1}, \\
+& \hat{Z}_{i-1} \hat{Y}_i, \\
+& \hat{Z}_{i-1} \hat{Y}_i \hat{Z}_{i+1}
+\end{aligned}
+\right\}
+\end{align}
+
+\textbf{Derivation Details:}
+\begin{itemize}
+    \item $[\hat{Z}_i \hat{Z}_{i+1}, \hat{X}_i] = 2i \hat{Y}_i \hat{Z}_{i+1}$ generates the $\hat{Y}\hat{Z}$ type.
+    \item $[\hat{Z}_{i-1} \hat{Z}_i, \hat{X}_i] = 2i \hat{Z}_{i-1} \hat{Y}_i$ generates the $\hat{Z}\hat{Y}$ type.
+    \item $[\hat{Z}_i \hat{Z}_{i+1}, \hat{Z}_{i-1} \hat{X}_i \hat{Z}_{i+1}]$: The $Z_{i+1}$ terms commute, leaving $[\hat{Z}_i, \hat{X}_i] = 2i\hat{Y}_i$, resulting in $\hat{Z}_{i-1} \hat{Y}_i \hat{Z}_{i+1}$.
+\end{itemize}
+This pool is physically motivated, compact, and tailored to the specific 3-body interactions of the Kogut-Susskind Hamiltonian.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+
+\bibliographystyle{unsrt}
+\bibliography{references/inspirehep}
+
+\end{document}

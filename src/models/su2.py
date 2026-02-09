@@ -83,6 +83,48 @@ class SU2GaugeModel(PhysicsModel):
                 
         return SparsePauliOp.from_list(list(zip(terms, coeffs))).simplify()
 
+    def get_local_hamiltonian(self, i: int) -> SparsePauliOp:
+        """
+        Returns the local energy density operator E_i for SU(2).
+        Includes 0.5 of and bonds (Z_i Z_{i+1} and Z_{i-1} Z_i) and full local terms.
+        """
+        c = self.coupling_constants
+        J, h_z, h_x = c["J"], c["h_z"], c["h_x"]
+        hx_scaled = h_x / 16.0
+        
+        terms = []
+        coeffs = []
+        
+        # Site index i
+        prev_i = (i - 1) % self.num_sites
+        next_i = (i + 1) % self.num_sites
+        
+        # Electric part (ZZ shared, Z local)
+        # Bond i-(i+1) and (i-1)-i
+        p_zz_next = ["I"] * self.num_sites; p_zz_next[i] = "Z"; p_zz_next[next_i] = "Z"
+        p_zz_prev = ["I"] * self.num_sites; p_zz_prev[prev_i] = "Z"; p_zz_prev[i] = "Z"
+        terms.append("".join(reversed(p_zz_next))); coeffs.append(J / 2.0)
+        terms.append("".join(reversed(p_zz_prev))); coeffs.append(J / 2.0)
+        
+        p_z = ["I"] * self.num_sites; p_z[i] = "Z"
+        terms.append("".join(reversed(p_z))); coeffs.append(h_z)
+        
+        # Magnetic part (local to site i patterns)
+        # X_i
+        p_x = ["I"] * self.num_sites; p_x[i] = "X"
+        terms.append("".join(reversed(p_x))); coeffs.append(hx_scaled)
+        # -3 Z_{i-1} X_i 
+        p_zx = ["I"] * self.num_sites; p_zx[prev_i] = "Z"; p_zx[i] = "X"
+        terms.append("".join(reversed(p_zx))); coeffs.append(-3 * hx_scaled)
+        # -3 X_i Z_{i+1}
+        p_xz = ["I"] * self.num_sites; p_xz[i] = "X"; p_xz[next_i] = "Z"
+        terms.append("".join(reversed(p_xz))); coeffs.append(-3 * hx_scaled)
+        # 9 Z_{i-1} X_i Z_{i+1}
+        p_zxz = ["I"] * self.num_sites; p_zxz[prev_i] = "Z"; p_zxz[i] = "X"; p_zxz[next_i] = "Z"
+        terms.append("".join(reversed(p_zxz))); coeffs.append(9 * hx_scaled)
+        
+        return SparsePauliOp.from_list(list(zip(terms, coeffs))).simplify()
+
     def build_operator_pool(self, pool_type: str = "global") -> List[SparsePauliOp]:
         """
         Global Symmetry-Respecting Pool (LaTeX):

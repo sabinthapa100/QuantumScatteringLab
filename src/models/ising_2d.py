@@ -75,6 +75,37 @@ class IsingModel2D(PhysicsModel):
                 
         return SparsePauliOp.from_list(list(zip(terms, coeffs))).simplify()
 
+    def get_local_hamiltonian(self, nx: int, ny: int) -> SparsePauliOp:
+        """
+        Returns the local energy density operator E_{nx,ny}.
+        Includes 0.5 of each bond touching site (nx,ny).
+        """
+        idx = self._get_idx(nx, ny)
+        neighbor_indices = [
+            self._get_idx(nx + 1, ny),
+            self._get_idx(nx - 1, ny),
+            self._get_idx(nx, ny + 1),
+            self._get_idx(nx, ny - 1)
+        ]
+        
+        terms = []
+        coeffs = []
+        
+        # Interactions (0.5 for each shared bond)
+        for j in neighbor_indices:
+            p = ["I"] * self.num_sites; p[idx] = "Z"; p[j] = "Z"
+            terms.append("".join(reversed(p))); coeffs.append(-0.5)
+            
+        # Fields
+        pX = ["I"] * self.num_sites; pX[idx] = "X"
+        terms.append("".join(reversed(pX))); coeffs.append(-self.g_x)
+        
+        if abs(self.g_z) > 1e-12:
+            pZ = ["I"] * self.num_sites; pZ[idx] = "Z"
+            terms.append("".join(reversed(pZ))); coeffs.append(-self.g_z)
+            
+        return SparsePauliOp.from_list(list(zip(terms, coeffs))).simplify()
+
     def build_operator_pool(self, pool_type: str = "global") -> List[SparsePauliOp]:
         """
         8-operator Global Symmetry-Preserving Pool (Farrell et al. 2025).

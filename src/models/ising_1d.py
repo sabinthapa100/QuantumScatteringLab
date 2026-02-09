@@ -139,12 +139,13 @@ class IsingModel1D(PhysicsModel):
         layers = []
         
         # Z-terms (Diagonal)
-        diag_terms = []
-        for i in range(self.num_sites):
-            p = ["I"] * self.num_sites; p[i] = "Z"
-            diag_terms.append(("".join(reversed(p)), -self.g_z))
-        if diag_terms:
-            layers.append(SparsePauliOp.from_list(diag_terms).simplify())
+        if abs(self.g_z) > 1e-12:
+            diag_terms = []
+            for i in range(self.num_sites):
+                p = ["I"] * self.num_sites; p[i] = "Z"
+                diag_terms.append(("".join(reversed(p)), -self.g_z))
+            if diag_terms:
+                layers.append(SparsePauliOp.from_list(diag_terms).simplify())
             
         # X-terms (Off-diagonal, all commute)
         x_terms = []
@@ -172,6 +173,43 @@ class IsingModel1D(PhysicsModel):
         if odd_zz: layers.append(SparsePauliOp.from_list(odd_zz).simplify())
             
         return layers
+
+    def get_local_hamiltonian(self, n: int) -> SparsePauliOp:
+        """
+        Returns the local energy density operator E_n.
+        E_n = - [ 0.25*(Z_n Z_{n+1} + Z_{n-1} Z_n) + g_x*X_n + g_z*Z_n ]
+        This ensures sum E_n = H.
+        """
+        terms = []
+        coeffs = []
+        
+        # Site index n
+        n0 = n
+        n1 = (n + 1) % self.num_sites
+        nm1 = (n - 1) % self.num_sites
+        
+        # Interactions (half of each bond touching site n)
+        # Bond n -- n+1
+        p_fwd = ["I"] * self.num_sites; p_fwd[n0] = "Z"; p_fwd[n1] = "Z"
+        terms.append("".join(reversed(p_fwd)))
+        coeffs.append(-0.5 * self.j_int * 0.5) # Factor of 0.5 because bond is shared
+        
+        # Bond n-1 -- n
+        p_bck = ["I"] * self.num_sites; p_bck[nm1] = "Z"; p_bck[n0] = "Z"
+        terms.append("".join(reversed(p_bck)))
+        coeffs.append(-0.5 * self.j_int * 0.5)
+        
+        # Field terms
+        p_x = ["I"] * self.num_sites; p_x[n0] = "X"
+        terms.append("".join(reversed(p_x)))
+        coeffs.append(-self.g_x)
+        
+        if abs(self.g_z) > 1e-12:
+            p_z = ["I"] * self.num_sites; p_z[n0] = "Z"
+            terms.append("".join(reversed(p_z)))
+            coeffs.append(-self.g_z)
+            
+        return SparsePauliOp.from_list(list(zip(terms, coeffs))).simplify()
 
     def get_symmetries(self) -> List[Symmetry]:
         syms = [Symmetry.PARITY]

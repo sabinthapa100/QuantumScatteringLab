@@ -8,7 +8,7 @@ Supports:
 """
 
 import numpy as np
-from typing import Any, List, Dict, Optional, Union
+from typing import Any, List, Dict, Optional
 from qiskit.quantum_info import SparsePauliOp
 import quimb as qu
 import logging
@@ -22,16 +22,39 @@ class QuimbBackend(QuantumBackend):
     
     Defaults to dense statevector simulation which is very fast for N < 20.
     Can leverage GPU if cupy is installed and configured in quimb.
+    
+    Includes optional caching of dense operator matrices to avoid repeated
+    `SparsePauliOp.to_matrix()` calls in ADAPT-VQE loops for moderate system
+    sizes (e.g. N≈8–12), with safeguards to avoid unbounded memory growth.
     """
     
-    def __init__(self, use_gpu: bool = False, verbose: bool = False):
+    def __init__(
+        self,
+        use_gpu: bool = False,
+        verbose: bool = False,
+        cache_operators: bool = True,
+        max_cache_size: Optional[int] = 256,
+        max_cache_dim: Optional[int] = 4096,
+    ):
         self.use_gpu = use_gpu
         self.verbose = verbose
+        
+        # Operator -> dense matrix cache (keyed by a stable structural key and
+        # device type). This is purely a performance optimisation; it must not
+        # change physics.
+        self.cache_operators = cache_operators
+        self._max_cache_size = max_cache_size
+        self._max_cache_dim = max_cache_dim
+        # Cache for operator matrices (CPU or GPU array / sparse matrix),
+        # keyed by (structural_key, use_gpu_flag).
+        self._op_cache: Dict[tuple[Any, bool], Any] = {}
+        # Backwards-compatible alias (in case old code references _matrix_cache).
+        self._matrix_cache = self._op_cache
         
         # Check for GPU support
         if self.use_gpu:
             try:
-                import cupy
+                import cupy  # type: ignore[unused-import]
                 logger.info("QuimbBackend: GPU (cupy) enabled.")
             except ImportError:
                 logger.warning("QuimbBackend: GPU requested but cupy not found. Falling back to CPU.")
@@ -55,98 +78,130 @@ class QuimbBackend(QuantumBackend):
         # qarray is a subclass of numpy.ndarray
         psi = qu.computational_state('0' * num_sites)
         
-        # Flatten initially? Qiskit backend uses 1D.
-        # But for quimb operations (matmul), (N,1) might be better?
-        # Let's keep (N,1) internally if quimb produces it, but flatten in get_statevector.
-        
         if self.use_gpu:
             import cupy
             return cupy.asarray(psi)
         return psi
 
+    def _get_operator_cache_key(self, operator: SparsePauliOp) -> tuple[Any, bool]:
+        """Construct a stable cache key for ``operator``."""
+        device_flag = bool(self.use_gpu)
+        
+        # Fast path: reuse a precomputed structural key if available.
+        base_key: Any
+        try:
+            existing_key = getattr(operator, "_cache_key", None)
+        except Exception:
+            existing_key = None
+        
+        if existing_key is not None:
+            base_key = existing_key
+        else:
+            try:
+                # Qiskit SparsePauliOp.to_list() -> List[(label, coeff)]
+                op_list = operator.to_list()
+                # Make hashable: ((label, complex(coeff)), ...)
+                base_key = tuple((label, complex(coeff)) for label, coeff in op_list)
+                # Store on the operator instance for O(1) reuse.
+                try:
+                    setattr(operator, "_cache_key", base_key)
+                except Exception:
+                    pass
+            except Exception:
+                base_key = id(operator)
+        
+        return (base_key, device_flag)
 
     def _pauli_to_matrix(self, operator: SparsePauliOp) -> Any:
-        """Convert Qiskit SparsePauliOp to a dense complex matrix."""
-        # This is efficient for small-ish systems (N < 14) but scales poorly O(2^N).
-        # For larger systems, we should handle sparse or TN.
-        # But ADAPT-VQE typically needs the full operator for evolution.
+        """Convert Qiskit SparsePauliOp to a (potentially sparse) matrix with optional caching.
         
-        # This conversion is tricky because qiskit vs quimb basis conventions/ordering might differ.
-        # Qiskit: q_n ... q_0 order? No, qiskit is typically little-endian for printing but standard for matrix.
-        # Quimb: qu.kron(A, B) -> A x B. A corresponds to qubit 0 (leftmost) if we index 0,1,2.
-        # Qiskit 'XYZ' string implies Qubit (N-1) ... Qubit 0.
-        
-        # Solution: Convert SparsePauliOp to matrix using qiskit, then get the numpy array.
-        # This ensures correctness of the matrix representation.
+        For performance, we request a sparse matrix from Qiskit and cache the
+        resulting SciPy CSR matrix (or GPU equivalent) keyed by a structural
+        operator hash and device flag.
+        """
         try:
-            mat = operator.to_matrix()
+            if not self.cache_operators:
+                mat = operator.to_matrix(sparse=True)
+                if self.use_gpu:
+                    from cupyx.scipy.sparse import csr_matrix  # type: ignore[import]
+                    return csr_matrix(mat)
+                return mat
+            
+            key = self._get_operator_cache_key(operator)
+            cached = self._op_cache.get(key)
+            if cached is not None:
+                return cached
+            
+            # Convert to sparse matrix (CSR) on CPU
+            mat = operator.to_matrix(sparse=True)
+            
+            # Move to appropriate device
             if self.use_gpu:
-                import cupy
-                return cupy.asarray(mat)
-            return mat
+                from cupyx.scipy.sparse import csr_matrix  # type: ignore[import]
+                arr = csr_matrix(mat)
+            else:
+                arr = mat
+            
+            # Cache if within limits
+            dim = arr.shape[0] if hasattr(arr, "shape") and len(arr.shape) > 0 else None
+            if (
+                self.cache_operators
+                and dim is not None
+                and (self._max_cache_dim is None or dim <= self._max_cache_dim)
+            ):
+                if self._max_cache_size is None or len(self._op_cache) < self._max_cache_size:
+                    self._op_cache[key] = arr
+            
+            return arr
         except Exception as e:
             raise BackendError(f"Failed to convert operator to matrix: {e}")
 
     def compute_expectation_value(self, state: Any, operator: SparsePauliOp) -> float:
-        """Compute <psi|O|psi> using quimb/numpy."""
-        # Convert operator to matrix
-        # For N=12, matrix is 4096 x 4096. Manageable.
+        """Compute ⟨ψ|O|ψ⟩ using cached (sparse) matrix representation."""
         H_mat = self._pauli_to_matrix(operator)
         
-        # Expectation: <psi|H|psi>
-        # qu.expec(op, state) usually handles density matrices or vectors
         if self.use_gpu:
             import cupy
-            # cupy.vdot for inner product
-            # H|psi>
-            H_psi = cupy.matmul(H_mat, state)
-            # <psi|H|psi>
+            H_psi = H_mat @ state
             val = cupy.vdot(state, H_psi)
             return float(val.real)
         else:
-            return qu.expec(H_mat, state).real
+            H_psi = H_mat @ state
+            return float(np.vdot(state, H_psi).real)
 
     def apply_operator(self, state: Any, operator: SparsePauliOp, parameter: float = 1.0) -> Any:
         """
         Apply U = exp(i * parameter * operator) to state.
-        state -> exp(i * theta * P) |psi>
-        """
-        # Convert P to matrix
-        P_mat = self._pauli_to_matrix(operator)
+        state -> exp(i * θ * P) |ψ⟩.
         
-        # Construct exponent: i * theta * P
-        # For Hermitian P, exp(i theta P) is unitary.
+        We use scipy/cupyx ``expm_multiply`` on the (cached) sparse matrix
+        representation of the operator, which applies the matrix exponential
+        directly to the vector without forming a dense U, preserving physics
+        while significantly reducing time and memory for moderate sizes.
+        """
+        if abs(parameter) < 1e-15:
+            return state
+        
+        P_mat = self._pauli_to_matrix(operator)
         exponent = 1j * parameter * P_mat
         
-        # Expm
         if self.use_gpu:
             import cupy
-            from cupyx.scipy.linalg import expm
-            U = expm(exponent)
-            new_state = cupy.matmul(U, state)
+            try:
+                from cupyx.scipy.sparse.linalg import expm_multiply  # type: ignore[import]
+                return expm_multiply(exponent, state)
+            except Exception:
+                # Fallback: dense expm on GPU if sparse expm_multiply unavailable
+                from cupyx.scipy.linalg import expm  # type: ignore[import]
+                U = expm(exponent.toarray())
+                return cupy.matmul(U, state)
         else:
-            from scipy.linalg import expm
-            U = expm(exponent)
-            new_state = np.dot(U, state)
-            
-        return new_state
+            from scipy.sparse.linalg import expm_multiply
+            return expm_multiply(exponent, state)
 
     def evolve_state_trotter(self, state: Any, hamiltonian_layers: List[SparsePauliOp], time_step: float) -> Any:
         """First order Trotter evolution."""
         current_state = state
-        
         for layer_op in hamiltonian_layers:
-            # U = exp(-i * H * t)
-            # Here apply_operator applies exp(i * theta * P), so set theta = -t * coeff?
-            # Wait, apply_operator takes SparsePauliOp.
-            # layer_op is a sum of terms.
-            # We assume layer_op terms commute or we approximate.
-            # evolve_state_exact handles the full layer exponential.
-            
-            # Since layer_op comes from get_trotter_layers, we treat it as a single block Hamiltonian.
-            # U = exp(-i * H_layer * dt)
-            # apply_operator implementation uses expm(i * theta * P)
-            # So pass operator=layer_op, parameter = -time_step
             current_state = self.apply_operator(current_state, layer_op, parameter=-time_step)
-            
         return current_state

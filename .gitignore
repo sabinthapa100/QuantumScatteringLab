@@ -29,6 +29,10 @@ ENV/
 env/
 .conda/
 
+implementation_plan.md
+HANDOFF.md
+*.log
+
 # IDEs
 .vscode/
 .idea/
@@ -39,8 +43,10 @@ env/
 
 # Jupyter
 .ipynb_checkpoints/
+# Keep notebooks in examples and docs
 *.ipynb
-!docs/notebooks/*.ipynb  # Keep documentation notebooks
+!examples/**/*.ipynb
+!docs/**/*.ipynb
 
 # Testing
 .pytest_cache/
@@ -54,11 +60,10 @@ htmlcov/
 # Outputs (generated plots, data)
 results/
 outputs/
-*.png
-*.pdf
-*.svg
+# We ignore generated outputs in results/ and outputs/
+# But we might want to keep some specific assets if needed.
 
-*.log
+# *.log (Already in line 34)
 *.dat
 *.csv
 *.h5
@@ -84,8 +89,6 @@ Thumbs.db
 *.tmp
 *.temp
 *.bak
-*.swp
-*~
 
 # Large data files
 *.npy
@@ -97,14 +100,15 @@ data/processed/
 *.dll
 *.dylib
 
-## Docs (Allow only .md)
-docs/*
-!docs/*.md
-
-# Documentation builds
+# Documentation
 docs/_build/
 docs/_static/
 docs/_templates/
+# Ignore large PDF downloads/references but keep MD and small images
+docs/**/*.pdf
+!docs/**/*.md
+!docs/**/*.png
+!docs/**/*.jpg
 
 # MyPy
 .mypy_cache/
@@ -121,8 +125,11 @@ dmypy.json
 *.c
 *.cpp
 cython_debug/
-archive
-agents
+
+# Archive (Large reference implementations, don't track)
+archive/
+agents/
+
 # Profiling
 *.prof
 *.lprof
@@ -131,9 +138,10 @@ agents
 .env
 .env.local
 
-# Legacy code (PROTECTED - never delete, but don't track changes)
-# src/groundstate/HEP_QSim_SabinYao/.git/
-# Keep the code, just not its git history if it has one
-
-# Archive (reference implementations, keep but don't actively track)
-archive/QuantumScatteringLab/.git/
+# Dashboard
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.next/
+dashboard/.venv/
+dashboard/venv/
+dashboard/__pycache__/

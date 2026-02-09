@@ -31,6 +31,7 @@ setup(
         "qiskit>=1.0.0,<2.0.0",
         "qiskit-aer>=0.13.0,<1.0.0",
         "matplotlib>=3.7.0,<4.0.0",
+        "quimb>=1.8.0",
     ],
     extras_require={
         "gpu": [

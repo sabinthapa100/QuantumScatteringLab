@@ -1,111 +1,104 @@
 # Quantum Scattering Lab (QSL)
 
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Framework: Qiskit](https://img.shields.io/badge/Framework-Qiskit-blueviolet.svg)](https://qiskit.org/)
-[![Enginge: Quimb](https://img.shields.io/badge/Engine-Quimb-green.svg)](https://quimb.readthedocs.io/)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![Framework: Quimb](https://img.shields.io/badge/Engine-Quimb-green.svg)](https://quimb.readthedocs.io/)
 
-A production-grade Object-Oriented framework for simulating quantum scattering and many-body dynamics in Lattice Field Theories (LFTs).
+A production-grade quantum simulation framework designed to explore high-energy physics phenomena using quantum information theoretic tools. This repository focuses on simulating **scattering dynamics in 1D/2D Ising Models** and **SU(2) Lattice Gauge Theories**, implementing rigorous **Matrix Product State (MPS)** methods and **ADAPT-VQE** state preparation algorithms.
 
----
+## 🔬 Scientific Objectives
 
-## 🔬 Scientific Overview
+My work in this repository targets three core research areas inspired by *Farrell et al. (2025)*:
 
-QuantumScatteringLab provides the computational infrastructure to study real-time dynamics of gauge theories and spin systems. The framework is designed to bridge the gap between classical tensor network simulations (MPS) and near-term quantum hardware execution (Qiskit).
+1.  **Vacuum & State Preparation**:
+    - Utilizing **ADAPT-VQE** to construct accurate ground states and single-particle excitations (magnons/mesons) on quantum hardware.
+    - Benchmarking ansatz depth connectivity against exact diagonalization.
 
-### Core Physics Models
+2.  **Real-Time Scattering Dynamics**:
+    - Simulating wavepacket collisions to observe **elastic vs. inelastic scattering** regimes.
+    - Quantifying particle production and entanglement entropy growth during high-energy collision events.
+    - **Models**:
+        - **1D Ising**: Transverse ($g_x$) and Longitudinal ($g_z$) fields.
+        - **SU(2) Gauge Theory**: Plaquette chain mapping for "glueball" dynamics.
 
-1.  **1D Transverse-Field Ising Model (TFIM)**
-    $$H = -J \sum_{i} Z_i Z_{i+1} - g_x \sum_i X_i - g_z \sum_i Z_i$$
-    *   **Phase Physics:** Supports periodic (PBC) and open (OBC) boundaries. Focus on $(1+1)D$ criticality at $g_x=1$.
-
-2.  **Heisenberg XXX/XXZ Spin Chain**
-    $$H = \sum_i [J_x X_i X_{i+1} + J_y Y_i Y_{i+1} + J_z Z_i Z_{i+1}] + h \sum_i Z_i$$
-    *   **Symmetry:** Isotropic $SU(2)$ for $J_x=J_y=J_z$ and $U(1)$ for XXZ.
-
-3.  **SU(2) Lattice Gauge Theory (Kogut-Susskind mapping)**
-    $$H_E = J \sum Z_i Z_{i+1} + h_z \sum Z_i, \quad H_M = \frac{h_x}{16} \sum [ X_i - 3 Z_{i-1} X_i - 3 X_i Z_{i+1} + 9 Z_{i-1} X_i Z_{i+1} ]$$
-    *   **Implementation:** Rigorous mapping from gauge links to site qubits, including boundary-correct plaquette handling.
-
----
+3.  **Interactive Visualization**:
+    - A custom-built **React + FastAPI** dashboard to visualize energy density evolution in real-time, allowing for rapid parameter tuning and intuition building.
 
 ## 🏗️ Architecture
 
-The project follows a modular, extensible design pattern to ensure research reproducibility and scalability.
+The codebase is structured for scalability and reproducibility:
 
--   **`src/models/`**: Physics definitions. Generates Hamiltonians and ADAPT-VQE operator pools using `SparsePauliOp`.
--   **`src/backends/`**: Simulation engines.
-    -   `QiskitBackend`: Exact statevector simulation (best for $N \le 20$).
-    -   `QuimbBackend`: Matrix Product States (MPS) for large-scale $1D$ chains ($N \gg 20$).
--   **`src/simulation/`**: State preparation algorithms.
-    -   `ADAPTVQESolver`: Implementation of Grimsley et al. with customizable gradient selection.
-    -   `AdiabaticSolver`: Time-dependent Hamiltonian evolution.
--   **`src/analysis/`**: Scientific processing.
-    -   Energy spectrum, entanglement entropy, Phase diagrams, and scaling collapse.
+- **`src/`**: The Core Engine.
+    - **`models/`**: rigorous Hamiltonian definitions (`IsingModel1D`, `SU2GaugeModel`) with explicit symmetry sectors.
+    - **`backends/`**: 
+        - `QuimbMPSBackend`: Optimized Tensor Network backend for $L > 20$ sites.
+        - `QiskitBackend`: Exact statevector simulation for validation.
+    - **`simulation/`**: Trotterized time-evolution and ADAPT-VQE solvers.
+    
+- **`examples/`**: Research scripts.
+    - `scattering/`: Production scripts for generating scattering heatmaps.
+    - `ground_state/`: Converging vacuum states using variational methods.
+    
+- **`dashboard/`**: Interactive GUI.
+    - Full-stack visualization tool for presenting results dynamically.
 
----
+## 🚀 Quick Start
 
-## 🚀 Installation
+### 1. Installation
+
+Ensure you have Python 3.10+ installed.
 
 ```bash
-# Development setup
+# Clone the repository
 git clone https://github.com/sabinthapa100/quantumscattering.git
 cd quantumscattering
+
+# Setup Virtual Environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install Core & Dev Dependencies
 pip install -e ".[all]"
 ```
 
----
+### 2. Running Simulations
 
-## 🧪 Quality Assurance
-
-We maintain strict verification standards using `pytest`:
-
-1.  **Unit Tests**: Verify Hamiltonian Hermiticity, Symmetry sectors, and Operator pool integrity.
-2.  **Integration Tests**: Ensure Qiskit (Exact) and Quimb (MPS) produce numerically consistent results.
+Generate a basic scattering trajectory (Ising Model):
 
 ```bash
-# Run the complete test suite
-python3 -m pytest tests/ -v
+python examples/generate_gui_data.py
 ```
+*Output will be saved to `dashboard/public/data/scattering_data.json`.*
+
+Run the ADAPT-VQE verification:
+
+```bash
+python examples/ground_state/01_ising1d_adapt_vqe.py
+```
+
+### 3. Launching the Dashboard
+
+To verify and inspect the simulation data interactively:
+
+```bash
+# Terminal 1: Backend API
+cd dashboard
+../.venv/bin/uvicorn server:app --reload
+
+# Terminal 2: Frontend Client
+cd dashboard
+npm install
+npm run dev
+```
+
+## 📈 Results & Analysis
+
+Key results include:
+- **Vacuum Subtraction**: Clean signal extraction of scattering wavepackets.
+- **Entanglement Entropy**: Verification of area law vs. volume law growth during collisions.
+- **Phase Diagrams**: Mapping confinement-deconfinement transitions in the SU(2) model.
 
 ---
 
-## 📈 Research Workflows
-
-### 1. Ground State Preparation (ADAPT-VQE)
-The framework implements the **Adaptive Ansatz Construction** to minimize circuit depth while hitting scientific accuracy targets.
-
-```python
-from src.models.ising_1d import IsingModel1D
-from src.simulation.adapt_vqe import ADAPTVQESolver
-from src.backends.qiskit_backend import QiskitBackend
-
-model = IsingModel1D(num_sites=10, g_x=1.0)
-solver = ADAPTVQESolver(model, backend=QiskitBackend())
-result = solver.run()
-print(f"Ground state energy: {result['energy']}")
-```
-
-### 2. Time Evolution (Trotterization)
-Real-time scattering is simulated via multi-layer Trotter decomposition.
-
-```python
-layers = model.get_trotter_layers()
-final_state = backend.evolve_state_trotter(initial_state, layers, time_step=0.01, steps=100)
-```
-
----
-
-## 📚 References & Archive
-
-The `archive/` folder contains original research scripts and Jupyter notebooks that serve as benchmarks. Key references:
-- **Grimsley et al.**, "An adaptive variational algorithm for exact molecular simulations on a quantum computer" (arXiv:1812.11173).
-- **Ebner et al.**, "Eigenstate Thermalization in 2+1 dimensional SU(2) Lattice Gauge Theory" (arXiv:2308.16202).
-- **Farrell et al.**, "Digital quantum simulations of scattering in quantum field theories using W states" (arXiv:2505.03111v2).
-
----
-
-**Developed for Advanced Quantum Simulations.**
-
-**Principal Author:** Sabin Thapa ([sthapa3@kent.edu](mailto:sthapa3@kent.edu))  
-**Research Area:** Quantum Simulation for Lattice Field Theory.
+**Author**: Sabin Thapa  
+**Focus**: Quantum Simulation, Lattice Field Theory, Tensor Networks.

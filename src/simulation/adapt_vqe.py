@@ -52,19 +52,50 @@ class ADAPTVQESolver:
         self.parameters: List[float] = []
         self.energy_history: List[float] = []
         self.gradient_history: List[float] = []
+        # Precompute gradient operators i[H, P_k] to avoid repeated commutator construction
+        # inside the ADAPT loop. This is a pure performance optimisation and does not change
+        # the mathematical definition of the gradients.
+        self._gradient_ops: Optional[List[SparsePauliOp]] = None
+        self._build_gradient_ops()
         
     def _prepare_ansatz_state(self, params: List[float]) -> Any:
         """Helper to prepare state |psi(theta)> = U(theta) |initial>."""
-        if self.initial_state is not None:
-            state = self.initial_state
-        else:
-            state = self.backend.get_reference_state(self.model.num_sites)
+        # Use partial state caching to avoid redundant exponentiations.
+        if not hasattr(self, "_state_cache"):
+            self._state_cache = {}
+            
+        params = list(params)
         
-        # Apply ansatz operators in order
-        for op, theta in zip(self.ansatz_ops, params):
-            # U = exp(i * theta * P)
+        # Find the longest matching prefix in cache
+        state = None
+        matched_prefix_len = 0
+        for i in range(len(params), 0, -1):
+            prefix = tuple(params[:i])
+            if prefix in self._state_cache:
+                state = self._state_cache[prefix]
+                matched_prefix_len = i
+                break
+        
+        if state is None:
+            if self.initial_state is not None:
+                state = self.initial_state
+            else:
+                state = self.backend.get_reference_state(self.model.num_sites)
+        
+        # Apply remaining operators
+        for i in range(matched_prefix_len, len(params)):
+            op = self.ansatz_ops[i]
+            theta = params[i]
             state = self.backend.apply_operator(state, op, theta)
             
+            # Cache the new prefix state (if not too large)
+            if self.model.num_sites <= 12: # Memory safety
+                prefix = tuple(params[:i+1])
+                # Limit cache size
+                if len(self._state_cache) > 500:
+                    self._state_cache.clear()
+                self._state_cache[prefix] = state
+                
         return state
 
     def compute_gradients(self, params: List[float]) -> List[float]:
@@ -75,38 +106,54 @@ class ADAPTVQESolver:
         psi = self._prepare_ansatz_state(params)
         
         grads = []
-        for op in self.pool:
-            # We want expectation of commutator O = i[H, P]
-            # Since backends usually expect SparsePauliOp, we construct it.
-            # Qiskit SparsePauliOp supports composition.
-            # commutator = H @ P - P @ H
-            comm = self.hamiltonian.compose(op) - op.compose(self.hamiltonian)
-            grad_op = 1j * comm
-            
+        gradient_ops = self._gradient_ops
+        if gradient_ops is None:
+            # Fallback (should not usually happen, but keeps behaviour robust if
+            # _build_gradient_ops is ever bypassed).
+            gradient_ops = []
+            for op in self.pool:
+                comm = self.hamiltonian.compose(op) - op.compose(self.hamiltonian)
+                gradient_ops.append(1j * comm)
+            self._gradient_ops = gradient_ops
+        
+        for grad_op in gradient_ops:
             val = self.backend.compute_expectation_value(psi, grad_op)
             grads.append(val)
             
         return grads
+
+    def _build_gradient_ops(self) -> None:
+        """Precompute i[H, P_k] for all pool operators P_k."""
+        gradient_ops: List[SparsePauliOp] = []
+        for op in self.pool:
+            # commutator = H @ P - P @ H
+            comm = self.hamiltonian.compose(op) - op.compose(self.hamiltonian)
+            grad_op = 1j * comm
+            gradient_ops.append(grad_op.simplify())
+        self._gradient_ops = gradient_ops
             
-    def run(self) -> Dict:
+    def run(self, exact_gs_state: Optional[Any] = None, exact_gs_energy: Optional[float] = None) -> Dict:
         """
         Run ADAPT-VQE with comprehensive logging and tracking.
         
+        Args:
+            exact_gs_state: Optional target statevector for overlap comparison.
+            exact_gs_energy: Optional target energy for error comparison.
+            
         Returns:
             Dictionary with results and iteration data
         """
         import time
         
-        # Compute exact ground state if possible (for validation)
-        exact_gs_energy = None
-        exact_gs_state = None
-        try:
-            H_mat = self.hamiltonian.to_matrix()
-            eigs, vecs = np.linalg.eigh(H_mat)
-            exact_gs_energy = eigs[0]
-            exact_gs_state = vecs[:, 0]
-        except:
-            pass  # Too large for exact diagonalization
+        # If not provided, try to compute exact ground state if possible
+        if exact_gs_energy is None:
+            try:
+                H_mat = self.hamiltonian.to_matrix()
+                eigs, vecs = np.linalg.eigh(H_mat)
+                exact_gs_energy = eigs[0]
+                exact_gs_state = vecs[:, 0]
+            except:
+                pass  # Too large
         
         # Initialize tracking
         iteration_data = []
@@ -124,13 +171,23 @@ class ADAPTVQESolver:
             print(f"Exact ground state energy: {exact_gs_energy:.10f}")
         print()
         
+        # Initial energy
+        psi_0 = self._prepare_ansatz_state(current_params)
+        prev_energy = self.backend.compute_expectation_value(psi_0, self.hamiltonian)
+        self.energy_history.append(prev_energy)
+        
         # Table header
         print(f"{'Iter':<6} {'Op':<6} {'||grad||':<12} {'max|g|':<12} "
               f"{'Energy':<16} {'ΔE':<12} {'#P':<5} {'Overlap':<10} {'Time(s)':<8}")
         print("-"*100)
         
         # Main ADAPT-VQE loop
+        overlap = None
         for iteration in range(self.max_iters):
+            # Clear partial state cache for new ansatz structure
+            if hasattr(self, "_state_cache"):
+                self._state_cache.clear()
+            
             iter_start = time.time()
             
             # 1. Compute gradients for all pool operators
@@ -168,6 +225,7 @@ class ADAPTVQESolver:
                     psi_vec = self.backend.get_statevector(psi_final) if hasattr(self.backend, 'get_statevector') else psi_final.data
                     overlap_final = np.abs(np.vdot(psi_vec, exact_gs_state))**2
                 
+                overlap = overlap_final
                 iter_time = time.time() - iter_start
                 
                 # Print final iteration
