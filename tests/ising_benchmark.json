@@ -1,0 +1,36 @@
+{
+  "paper_benchmark": {
+    "model": "tilted_field_ising_1d",
+    "gx": 1.25,
+    "gz": 0.15,
+    "L_hardware": 104,
+    "bc_hardware": "obc",
+    "k0_inelastic": "0.32*pi",
+    "sigma_k": 0.13,
+    "dt_hardware": 0.55,
+    "times_to_plot": [
+      8.25,
+      16.5,
+      24.75
+    ],
+    "packet_support_min_d": 21,
+    "boundary_margin_sites": 30,
+    "energy_threshold_Ethr": 4.57,
+    "Etot_over_Ethr": 1.2
+  },
+  "elastic_reference": {
+    "k0_elastic": "0.18*pi",
+    "sigma_k": 0.13
+  },
+  "classical_reference": {
+    "L_mps_default": 104,
+    "bc_mps": "obc",
+    "dt_mps_truth": 0.0625,
+    "bond_dim_default": 800,
+    "bond_dim_high": 1500
+  },
+  "reproducibility": {
+    "random_seed": 1234,
+    "artifacts_dir": "../artifacts"
+  }
+}

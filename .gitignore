@@ -1,0 +1,139 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+!docs/notebooks/*.ipynb  # Keep documentation notebooks
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+
+# Outputs (generated plots, data)
+results/
+outputs/
+*.png
+*.pdf
+*.svg
+
+*.log
+*.dat
+*.csv
+*.h5
+*.hdf5
+
+# Agent knowledge base (state and graphs not pushed)
+.agents/state/
+.agents/graphs/
+# Keep knowledge and workflows
+!.agents/knowledge/
+!.agents/workflows/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Large data files
+*.npy
+*.npz
+data/raw/
+data/processed/
+
+# Compiled extensions
+*.dll
+*.dylib
+
+## Docs (Allow only .md)
+docs/*
+!docs/*.md
+
+# Documentation builds
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# pytype
+.pytype/
+
+# Cython
+*.c
+*.cpp
+cython_debug/
+archive
+
+# Profiling
+*.prof
+*.lprof
+
+# Environment
+.env
+.env.local
+
+# Legacy code (PROTECTED - never delete, but don't track changes)
+# src/groundstate/HEP_QSim_SabinYao/.git/
+# Keep the code, just not its git history if it has one
+
+# Archive (reference implementations, keep but don't actively track)
+archive/QuantumScatteringLab/.git/
