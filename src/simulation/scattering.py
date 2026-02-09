@@ -1,98 +1,82 @@
 """
-Scattering Simulation Module
+Scattering Simulation Engine
 ============================
-
-Simulate wavepacket dynamics and scattering in 1D quantum systems.
-- Gaussian wavepacket initialization.
-- Time evolution using Trotterization.
-- Analysis of transmission and reflection coefficients.
+Core logic for time-evolving wavepackets and extracting observables.
+Designed to be backend-agnostic but optimized for MPS.
 """
 
 import numpy as np
-from typing import Any, List, Optional, Tuple
-from qiskit.quantum_info import SparsePauliOp
+from typing import List, Dict, Any, Optional
+import quimb.tensor as qtn
+from src.backends.quimb_mps_backend import QuimbMPSBackend
+from src.models.base import PhysicsModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ScatteringSimulator:
-    def __init__(self, model: Any, backend: Any):
+    """
+    Orchestrates the scattering experiment:
+    1. Prepare Initial State (Wavepackets)
+    2. Evolve in Time (Trotter)
+    3. Measure Observables (Energy Density, Entropy)
+    """
+    
+    def __init__(self, model: PhysicsModel, backend: QuimbMPSBackend):
         self.model = model
         self.backend = backend
-        self.num_sites = model.num_sites
+        self.layers = model.get_trotter_layers()
+        self.vac_energy_profile = None
 
-    def create_gaussian_wavepacket(
-        self,
-        x0: float,
-        sigma: float,
-        k0: float,
-        excitation_op: str = "X"
-    ) -> Any:
+    def set_vacuum_reference(self, method: str = "approximate"):
         """
-        Create a Gaussian wavepacket of single-site excitations.
-        psi = sum_x exp(i k0 x) exp(-(x-x0)^2 / (2 sigma^2)) |x>
-        where |x> = Op_x |0>
+        Compute vacuum energy profile for subtraction.
         """
-        # 1. Create coefficients
-        x = np.arange(self.num_sites)
-        coeffs = np.exp(1j * k0 * x) * np.exp(-(x - x0)**2 / (2 * sigma**2))
-        coeffs /= np.linalg.norm(coeffs) # Normalize
+        # For simplicity in this demo, use the reference state |00...0>
+        # In production, use VQE or Imaginary Time Evolution
+        psi_vac = self.backend.get_reference_state(self.model.num_sites)
         
-        # 2. Construct state in the full Hilbert space
-        # We start with the reference state (vacuum)
-        vacuum = self.backend.get_reference_state(self.num_sites)
-        
-        # We need to construct the state as a superposition of Op_x |vac>
-        # This is psi = (sum_x coeffs[x] Op_x) |vac>
-        
-        # Build the creator operator
-        creator_terms = []
-        for i in range(self.num_sites):
-            p = ["I"] * self.num_sites
-            p[i] = excitation_op
-            creator_terms.append(("".join(reversed(p)), coeffs[i]))
-            
-        creator_op = SparsePauliOp.from_list(creator_terms)
-        
-        # Apply the creator operator to the vacuum
-        # apply_operator applies exp(i theta P). We want to apply P directly?
-        # QuimbBackend doesn't have a direct 'apply_linear_operator'?
-        # Actually, we can use compute_expectation_value logic to apply it.
-        # mat = backend._pauli_to_matrix(creator_op)
-        # psi = mat @ vacuum
-        
-        # Let's add 'apply_matrix' or similar to backend or use private method
-        if hasattr(self.backend, "_pauli_to_matrix"):
-            mat = self.backend._pauli_to_matrix(creator_op)
-            state = mat @ vacuum
-            # Re-normalize just in case (e.g. if vacuum was not exactly 0)
-            if self.backend.use_gpu:
-                import cupy
-                norm = cupy.linalg.norm(state)
-                state /= norm
-            else:
-                state /= np.linalg.norm(state)
-            return state
-        else:
-            raise NotImplementedError("Backend must support _pauli_to_matrix for scattering init.")
+        self.vac_energy_profile = []
+        for n in range(self.model.num_sites):
+             op = self.model.get_local_hamiltonian(n)
+             val = self.backend.compute_expectation_value(psi_vac, op)
+             self.vac_energy_profile.append(val)
+             
+        return self.vac_energy_profile
 
-    def evolve(self, state: Any, dt: float, num_steps: int) -> List[Any]:
-        """Evolve state and return trajectory."""
-        trajectory = [state]
-        current_state = state
+    def run(self, initial_state: qtn.MatrixProductState, t_max: float, dt: float, 
+            observables: List[str] = ["energy_density"]) -> Dict[str, Any]:
+        """
+        Run time evolution and return trajectory.
+        """
+        steps = int(t_max / dt)
+        results = {obs: [] for obs in observables}
+        results["time"] = []
         
-        # Get trotter layers from model
-        layers = self.model.get_trotter_layers()
+        current_psi = initial_state
         
-        for _ in range(num_steps):
-            current_state = self.backend.evolve_state_trotter(current_state, layers, dt)
-            trajectory.append(current_state)
+        # Ensure vacuum is set
+        if self.vac_energy_profile is None:
+            self.set_vacuum_reference()
             
-        return trajectory
-
-    def compute_density_profile(self, state: Any) -> np.ndarray:
-        """Compute <Z_i> or population at each site."""
-        profile = []
-        for i in range(self.num_sites):
-            p = ["I"] * self.num_sites; p[i] = "Z"
-            op = SparsePauliOp.from_list([("".join(reversed(p)), 1.0)])
-            val = self.backend.compute_expectation_value(state, op)
-            profile.append(val)
-        return np.array(profile)
+        for t in range(steps):
+            # 1. Measure
+            if "energy_density" in observables:
+                row = []
+                for n in range(self.model.num_sites):
+                    op = self.model.get_local_hamiltonian(n)
+                    val = self.backend.compute_expectation_value(current_psi, op)
+                    row.append(float(val - self.vac_energy_profile[n]))
+                results["energy_density"].append(row)
+                
+            if "entropy" in observables:
+                # Expensive! Maybe only measure every k steps?
+                # For now, skip to keep GUI fast.
+                pass
+                
+            results["time"].append(t * dt)
+            
+            # 2. Evolve
+            current_psi = self.backend.evolve_state_trotter(current_psi, self.layers, dt)
+            
+        return results

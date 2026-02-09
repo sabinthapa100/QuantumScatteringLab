@@ -1,88 +1,78 @@
 """
-Scattering of Gauge Excitations (Glueballs) in SU(2) Lattice Gauge Theory.
-Using MPS backend for 1D plaquette chain.
+Experiment 02b: SU(2) Lattice Gauge Theory Scattering (MPS)
+==========================================================
+Simulates "glueball" scattering on a chain of SU(2) plaquettes.
+The model is mapped to a spin chain where "plaquette flips" correspond to local magnetic excitations.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
+import quimb.tensor as qtn
 import os
-import sys
-import time
-
-# Ensure project root is in path
-sys.path.append(os.path.abspath("."))
-
 from src.models.su2 import SU2GaugeModel
 from src.backends.quimb_mps_backend import QuimbMPSBackend
 from src.simulation.initialization import prepare_two_wavepacket_state
-import quimb.tensor as qtn
 
-def run_su2_scattering(num_sites=16, g=2.0, num_steps=80, dt=0.1):
-    print(f"\n--- SU(2) Gauge Scattering: L={num_sites}, g={g} ---")
-    # For large g, vacuum is highly polarized.
-    model = SU2GaugeModel(num_sites=num_sites, g=g, pbc=True)
-    backend = QuimbMPSBackend(max_bond_dim=32)
+def run_experiment(L=20, T=30, dt=0.05, g=1.5):
+    print(f"--- Running SU(2) Gauge Theory Scattering (L={L}, g={g}) ---")
     
-    # 1. Vacuum
-    # Computational '0' is the strong coupling vacuum for SU(2).
-    psi_vac = backend.get_reference_state(num_sites)
-    print("Measuring vacuum energy density...")
-    vac_energy_density = []
-    for n in range(num_sites):
-        En_op = model.get_local_hamiltonian(n)
-        val = backend.compute_expectation_value(psi_vac, En_op)
-        vac_energy_density.append(val)
-    vac_energy_density = np.array(vac_energy_density)
+    # 1. Setup Model (Plaquette Chain)
+    # g is coupling constant. Large g -> Strong Coupling (Vacuum ~ |0>)
+    model = SU2GaugeModel(num_sites=L, g=g, a=1.0, pbc=True)
+    backend = QuimbMPSBackend(max_bond_dim=64, verbose=True)
     
-    # 2. Initial State
-    print("Preparing initial state (Two Glueball Wavepackets)...")
-    # Wavepackets of electric flux excitations.
-    x1, x2 = num_sites / 4, 3 * num_sites / 4
-    psi_np = prepare_two_wavepacket_state(
-        num_sites,
-        x1=x1, k1=0.4*np.pi, sigma1=1.0,
-        x2=x2, k2=-0.4*np.pi, sigma2=1.0,
+    # 2. Vacuum State
+    # In strong coupling, vacuum is close to flux-free |0...0>
+    # In weak coupling, we'd need VQE or imaginary time evolution.
+    # Here we assume strong coupling limit for clean wavepackets.
+    psi_vac = backend.get_reference_state(L)
+    vac_E = [backend.compute_expectation_value(psi_vac, model.get_local_hamiltonian(i)) for i in range(L)]
+
+    # 3. Initial State (Meson/Glueball Wavepackets)
+    # Excitations are localized plaquette flips (magnetic flux)
+    print("Injecting glueballs...")
+    psi_dense = prepare_two_wavepacket_state(
+        L, 
+        x1=5, k1=0.8*np.pi, sigma1=1.0,  # Left glueball
+        x2=15, k2=-0.8*np.pi, sigma2=1.0, # Right glueball
         backend_type="numpy"
     )
-    current_psi = qtn.MatrixProductState.from_dense(psi_np, [2]*num_sites)
-    current_psi.compress(max_bond=32)
+    psi = qtn.MatrixProductState.from_dense(psi_dense, [2]*L)
+    psi.compress(max_bond=64)
     
-    # 3. Evolution
-    heatmap_data = np.zeros((num_steps, num_sites))
+    # 4. Evolution
     layers = model.get_trotter_layers()
+    heatmap = []
     
-    print(f"Evolving for {num_steps} steps...")
-    start_time = time.time()
-    for i in range(num_steps):
-        if i % 10 == 0:
-            print(f"  Step {i}/{num_steps} (Time: {time.time()-start_time:.1f}s)")
-            
-        # Measure Energy Density
-        for n in range(num_sites):
-            En_op = model.get_local_hamiltonian(n)
-            val = backend.compute_expectation_value(current_psi, En_op)
-            heatmap_data[i, n] = val - vac_energy_density[n]
-            
-        current_psi = backend.evolve_state_trotter(current_psi, layers, dt)
+    steps = int(T/dt)
+    for t in range(steps):
+        if t % 5 == 0: print(f"Step {t}/{steps}")
         
-    return heatmap_data
-
-def plot_su2_heatmap(data, filename, num_sites, num_steps, dt):
-    plt.figure(figsize=(10, 8))
-    plt.imshow(data, extent=[0, num_sites-1, num_steps*dt, 0], aspect='auto', cmap='inferno')
-    plt.colorbar(label='Glueball Energy Density (En - Evac)')
-    plt.xlabel('Plaquette Index n')
-    plt.ylabel('Time t')
-    plt.title(f'SU(2) Glueball Scattering (L={num_sites}, g=2.0)')
-    
-    output_dir = "results/scattering"
-    os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, filename), dpi=300)
-    print(f"Saved SU(2) plot to {output_dir}/{filename}")
-
-def main():
-    h_su2 = run_su2_scattering(num_sites=16, g=2.0, num_steps=60)
-    plot_su2_heatmap(h_su2, "su2_scattering.png", 16, 60, 0.1)
+        # Measure local Electric/Magnetic energy density
+        # For simplicity, just total H density
+        row = []
+        for i in range(L):
+            val = backend.compute_expectation_value(psi, model.get_local_hamiltonian(i))
+            row.append(val - vac_E[i])
+        heatmap.append(row)
+        
+        psi = backend.evolve_state_trotter(psi, layers, dt)
+        
+    return np.array(heatmap)
 
 if __name__ == "__main__":
-    main()
+    os.makedirs("results/su2", exist_ok=True)
+    
+    # Run simulation
+    data = run_experiment(g=1.2) # Intermediate coupling
+    
+    # Visualize
+    plt.figure(figsize=(8, 6))
+    plt.imshow(data, aspect='auto', origin='lower', cmap='plasma')
+    plt.title("SU(2) Glueball Scattering Density")
+    plt.xlabel("Plaquette Index")
+    plt.ylabel("Time Step")
+    plt.colorbar(label="Energy Density")
+    
+    plt.savefig("results/su2/scattering_map.png")
+    print("Saved to results/su2/scattering_map.png")
