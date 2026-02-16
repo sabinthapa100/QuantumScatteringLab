@@ -129,6 +129,7 @@ cython_debug/
 # Archive (Large reference implementations, don't track)
 archive/
 agents/
+.agents/
 
 # Profiling
 *.prof
