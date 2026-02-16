@@ -134,7 +134,7 @@ agents/
 # Profiling
 *.prof
 *.lprof
-
+data/
 # Environment
 .env
 .env.local
